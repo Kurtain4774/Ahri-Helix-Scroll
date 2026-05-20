@@ -49,7 +49,7 @@ Pointer events on the canvas translate drag distance into `window.scrollTo` call
 
 ### Music
 
-Music remains paused until the user clicks the music panel Play button. If browser playback policy blocks that explicit Play click, the panel shows the `needs-interaction` state. Music pauses when the page is hidden or loses focus, and does not resume automatically.
+Music remains paused until the user clicks the music panel Play button or starts scrolling the page. If browser playback policy blocks that explicit Play/scroll interaction, the panel shows the `needs-interaction` state. Music pauses when the page is hidden or loses focus, and does not resume from focus alone.
 
 ## Card Content
 

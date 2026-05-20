@@ -132,36 +132,61 @@ let musicRequested = false;
 let firstRenderDone = false;
 let scrollHintHidden = false;
 let pointerMoveCount = 0;
+let skinListExpanded = false;
+let renderedSkinListKey = "";
 const FRAME_BUDGET_MS = 1000 / 60;
+const CLICK_MOVE_TOLERANCE = 8;
 let lastFrameTime = 0;
 
+const scrollStartKeys = new Set([
+  " ",
+  "ArrowDown",
+  "ArrowUp",
+  "End",
+  "Home",
+  "PageDown",
+  "PageUp",
+  "Spacebar",
+]);
+
 const imageFiles = [
-  "340px-Ahri_OriginalSkin.jpg",
-  "340px-Ahri_DynastySkin.jpg",
-  "340px-Ahri_MidnightSkin.jpg",
-  "340px-Ahri_FoxfireSkin.jpg",
-  "340px-Ahri_PopstarSkin.jpg",
-  "340px-Ahri_AcademySkin.jpg",
-  "340px-Ahri_ArcadeSkin.jpg",
-  "340px-Ahri_StarGuardianSkin.jpg",
-  "340px-Ahri_KDASkin.jpg",
-  "340px-Ahri_ElderwoodSkin.jpg",
-  "340px-Ahri_SpiritBlossomSkin.jpg",
-  "340px-Ahri_KDAALLOUTSkin.jpg",
-  "340px-Ahri_CovenSkin.jpg",
-  "340px-Ahri_ArcanaSkin.jpg",
-  "340px-Ahri_SnowMoonSkin.jpg",
-  "340px-Ahri_SpiritBlossomSpringsSkin.jpg",
+  "ahri-classic-762x.jpg",
+  "ahri-dynasty-762x.jpg",
+  "ahri-midnight-762x.jpg",
+  "ahri-foxfire-762x.jpg",
+  "ahri-popstar-762x.jpg",
+  "ahri-challenger-762x.jpg",
+  "ahri-academy-762x.jpg",
+  "ahri-arcade-762x.jpg",
+  "ahri-star-guardian-762x.jpg",
+  "ahri-kda-762x.jpg",
+  "ahri-kda-prestige-762x.jpg",
+  "ahri-elderwood-762x.jpg",
+  "ahri-spirit-blossom-762x.jpg",
+  "ahri-kda-all-out-762x.jpg",
+  "ahri-coven-762x.jpg",
+  "ahri-arcana-762x.jpg",
+  "ahri-snow-moon-762x.jpg",
+  "ahri-risen-legend-762x.jpg",
+  "ahri-immortalized-legend-762x.jpg",
+  "ahri-spirit-blossom-springs-762x.jpg",
+  "ahri-after-hours-spirit-blossom-springs-762x.jpg",
 ];
+
+const cardTitleOverrides = {
+  "ahri-classic-762x.jpg": "BASE",
+  "ahri-kda-prestige-762x.jpg": "PRESTIGE K/DA",
+};
 
 const CARD_COUNT = imageFiles.length;
 const CARD_ANGLE_STEP = Math.PI / 3;
 const CARD_ANGLE_OFFSET = 0.35;
-const CARD_ASPECT_RATIO = 340 / 201;
+const CARD_ASPECT_RATIO = 762 / 449;
 const CARD_HEIGHT = 1.84;
 const CARD_WIDTH = CARD_HEIGHT * CARD_ASPECT_RATIO;
 const CARD_RADIUS = 3.2;
-const HELIX_HEIGHT = 18.4;
+const CARD_VERTICAL_STEP = 1.12;
+const HELIX_HEIGHT = Math.max(18.4, 1.6 + (CARD_COUNT - 1) * CARD_VERTICAL_STEP);
 const HELIX_TURNS = ((CARD_COUNT - 1) * CARD_ANGLE_STEP) / (Math.PI * 2);
 const PARTICLE_HELIX_RADIUS = 24;
 const PARTICLE_HELIX_HEIGHT = HELIX_HEIGHT;
@@ -172,6 +197,11 @@ window.helixDebug = {
   activeCardIndex,
   scrollProgress,
 };
+
+document.documentElement.style.setProperty(
+  "--gallery-scroll-height",
+  `${Math.max(320, CARD_COUNT * 20)}vh`,
+);
 
 const palette = [
   new THREE.Color("#e8547a"),
@@ -252,7 +282,7 @@ function drawPanel(ctx, width, height, image, index, options) {
   if (image) {
     ctx.save();
     ctx.globalAlpha = 0.96;
-    ctx.filter = "saturate(0.95) contrast(1.02) brightness(0.9)";
+    ctx.filter = "saturate(0.98) contrast(1.06) brightness(0.96)";
     drawImageCover(ctx, image, inset, inset, panelWidth, panelHeight);
     ctx.restore();
   } else {
@@ -296,8 +326,8 @@ function drawPanel(ctx, width, height, image, index, options) {
   const stripH = panelHeight * 0.32;
   const strip = ctx.createLinearGradient(0, inset + panelHeight - stripH, 0, inset + panelHeight);
   strip.addColorStop(0, "rgba(13, 6, 20, 0)");
-  strip.addColorStop(0.48, "rgba(13, 6, 20, 0.74)");
-  strip.addColorStop(1, "rgba(13, 6, 20, 0.92)");
+  strip.addColorStop(0.48, "rgba(13, 6, 20, 0.82)");
+  strip.addColorStop(1, "rgba(13, 6, 20, 0.96)");
   ctx.fillStyle = strip;
   ctx.fillRect(inset, inset + panelHeight - stripH, panelWidth, stripH);
 
@@ -325,25 +355,30 @@ function drawPanel(ctx, width, height, image, index, options) {
 function drawCardTitle(ctx, width, height, index, fileName = "") {
   const title = getCardTitle(fileName, index);
   const lines = splitTitleLines(title);
-  const mainSize = lines.length > 1 ? 54 : 66;
+  const inset = 34;
+  const maxTitleWidth = width - inset * 2 - 36;
+  const longestLine = lines.reduce((longest, line) => (line.length > longest.length ? line : longest), "");
+  const mainSize = lines.length > 1
+    ? Math.min(54, getSingleLineTitleSize(ctx, longestLine, maxTitleWidth))
+    : getSingleLineTitleSize(ctx, title, maxTitleWidth);
   const lineHeight = mainSize * 1.02;
 
-  const inset = 34;
   const panelHeight = height - inset * 2;
   const stripBottom = inset + panelHeight - 22;
   const textBlock = lines.length * lineHeight;
-  const startY = stripBottom - textBlock - 10;
+  const blockTop = stripBottom - textBlock - 10;
+  const startY = blockTop + lineHeight * 0.5;
 
   ctx.save();
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
 
   ctx.font = `500 ${mainSize}px Consolas, 'Liberation Mono', monospace`;
-  ctx.shadowColor = "rgba(232, 84, 122, 0.82)";
-  ctx.shadowBlur = 14;
-  ctx.strokeStyle = "rgba(13, 6, 20, 0.9)";
-  ctx.lineWidth = 5;
-  ctx.fillStyle = "rgba(247, 248, 255, 0.96)";
+  ctx.shadowColor = "rgba(255, 111, 152, 0.95)";
+  ctx.shadowBlur = 16;
+  ctx.strokeStyle = "rgba(5, 2, 10, 0.98)";
+  ctx.lineWidth = 6;
+  ctx.fillStyle = "rgba(255, 255, 255, 1)";
 
   lines.forEach((line, lineIndex) => {
     const y = startY + lineIndex * lineHeight;
@@ -352,45 +387,48 @@ function drawCardTitle(ctx, width, height, index, fileName = "") {
   });
 
   ctx.font = "500 24px Consolas, 'Liberation Mono', monospace";
-  ctx.shadowColor = "rgba(168, 85, 200, 0.9)";
-  ctx.shadowBlur = 10;
-  ctx.fillStyle = "rgba(168, 85, 200, 0.9)";
-  ctx.fillText("AHRI", width / 2, startY - 34);
+  ctx.shadowColor = "rgba(213, 139, 255, 0.98)";
+  ctx.shadowBlur = 12;
+  ctx.fillStyle = "rgba(234, 204, 255, 1)";
+  ctx.fillText("AHRI", width / 2, blockTop - 18);
 
   const indexLabel =
     String(index + 1).padStart(2, "0") + " / " + String(CARD_COUNT).padStart(2, "0");
   ctx.font = "400 19px Consolas, 'Liberation Mono', monospace";
   ctx.shadowColor = "transparent";
   ctx.shadowBlur = 0;
-  ctx.fillStyle = "rgba(245, 200, 66, 0.52)";
+  ctx.fillStyle = "rgba(255, 220, 99, 0.92)";
   ctx.textAlign = "right";
   ctx.fillText(indexLabel, width - inset - 18, inset + 26);
 
   ctx.restore();
 }
 
-function getCardTitle(fileName, index) {
-  const fallback = `Skin ${String(index + 1).padStart(2, "0")}`;
-  const match = fileName.match(/Ahri_(.+?)Skin/i);
-  if (!match) return fallback.toUpperCase();
+function getSingleLineTitleSize(ctx, title, maxWidth) {
+  const maxSize = 66;
+  const minSize = 39;
+  let size = maxSize;
 
-  return match[1]
-    .replace(/KDAALLOUT/g, "KDA ALL OUT")
-    .replace(/KDA/g, "KDA")
-    .replace(/([a-z])([A-Z])/g, "$1 $2")
-    .replace(/([A-Z])([A-Z][a-z])/g, "$1 $2")
-    .toUpperCase();
+  while (size > minSize) {
+    ctx.font = `500 ${size}px Consolas, 'Liberation Mono', monospace`;
+    if (ctx.measureText(title).width <= maxWidth) return size;
+    size -= 1;
+  }
+
+  return minSize;
 }
 
 function splitTitleLines(title) {
   const words = title.split(" ");
-  if (title.length <= 12 || words.length === 1) return [title];
+  if (title.length <= 22 || words.length === 1) return [title];
 
+  const targetLength = Math.ceil(title.length / 2);
   const lines = [];
   let current = "";
+
   words.forEach((word) => {
     const next = current ? `${current} ${word}` : word;
-    if (next.length > 13 && current) {
+    if (next.length > targetLength && current && lines.length === 0) {
       lines.push(current);
       current = word;
     } else {
@@ -400,6 +438,23 @@ function splitTitleLines(title) {
 
   if (current) lines.push(current);
   return lines.slice(0, 2);
+}
+
+function getCardTitle(fileName, index) {
+  const fallback = `Skin ${String(index + 1).padStart(2, "0")}`;
+  if (cardTitleOverrides[fileName]) return cardTitleOverrides[fileName];
+
+  const oldNameMatch = fileName.match(/Ahri_(.+?)Skin/i);
+  const slugMatch = fileName.match(/^ahri-(.+?)-762x\.(?:jpg|jpeg|png|webp)$/i);
+  const rawName = oldNameMatch?.[1] ?? slugMatch?.[1]?.replace(/-/g, " ");
+  if (!rawName) return fallback.toUpperCase();
+
+  return rawName
+    .replace(/KDAALLOUT/gi, "K/DA ALL OUT")
+    .replace(/\bkda\b/gi, "K/DA")
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/([A-Z])([A-Z][a-z])/g, "$1 $2")
+    .toUpperCase();
 }
 
 function drawCardGrain(ctx, x, y, width, height, seed) {
@@ -804,27 +859,65 @@ function updateDots() {
   });
 }
 
-function buildSkinList() {
+function getDisplaySkinName(fileName, index) {
+  return getCardTitle(fileName, index)
+    .split(" ")
+    .map((w) => (w === "K/DA" ? w : w.charAt(0) + w.slice(1).toLowerCase()))
+    .join(" ");
+}
+
+function getSkinListVisibleCount() {
+  if (!skinListExpanded) return 5;
+
+  const usableHeight = Math.max(220, window.innerHeight - 168);
+  const countFromHeight = Math.floor(usableHeight / 34);
+  const boundedCount = THREE.MathUtils.clamp(countFromHeight, 5, 11);
+  return boundedCount % 2 === 0 ? boundedCount - 1 : boundedCount;
+}
+
+function scrollToCard(index) {
+  const scrollMax = getScrollMax();
+  const progress = index / Math.max(1, CARD_COUNT - 1);
+  window.scrollTo({ top: progress * scrollMax, behavior: "smooth" });
+}
+
+function updateSkinList() {
   if (!skinListEl) return;
-  const showCount = Math.min(7, imageFiles.length);
-  imageFiles.slice(0, showCount).forEach((fileName, i) => {
-    const raw = getCardTitle(fileName, i);
-    const displayName = raw
-      .split(" ")
-      .map((w) => w.charAt(0) + w.slice(1).toLowerCase())
-      .join(" ");
+  const visibleCount = getSkinListVisibleCount();
+  const sideCount = Math.floor(visibleCount / 2);
+  const start = Math.max(0, activeCardIndex - sideCount);
+  const end = Math.min(CARD_COUNT - 1, activeCardIndex + sideCount);
+  const listKey = `${start}:${end}:${activeCardIndex}:${skinListExpanded}`;
+  if (listKey === renderedSkinListKey) return;
+
+  renderedSkinListKey = listKey;
+  skinListEl.textContent = "";
+
+  for (let i = start; i <= end; i += 1) {
     const li = document.createElement("li");
     const a = document.createElement("a");
     a.href = "#";
-    a.textContent = displayName;
+    a.textContent = getDisplaySkinName(imageFiles[i], i);
+    a.dataset.cardIndex = String(i);
+    if (i === activeCardIndex) {
+      a.classList.add("active");
+      a.setAttribute("aria-current", "true");
+    }
     a.addEventListener("click", (e) => {
       e.preventDefault();
-      const scrollMax = getScrollMax();
-      window.scrollTo({ top: (i / (CARD_COUNT - 1)) * scrollMax, behavior: "smooth" });
+      scrollToCard(i);
     });
     li.appendChild(a);
     skinListEl.appendChild(li);
-  });
+  }
+}
+
+function setSkinListExpanded(expanded) {
+  if (skinListExpanded === expanded) return;
+
+  skinListExpanded = expanded;
+  renderedSkinListKey = "";
+  updateSkinList();
 }
 
 function getCardFocusRotation(index) {
@@ -870,6 +963,7 @@ function updateScrollState() {
   scrollRotation = getCardFocusRotation(activeCardIndex);
   updateFocusedCardTarget();
   updateDots();
+  updateSkinList();
   window.helixDebug.activeCardIndex = activeCardIndex;
   window.helixDebug.scrollProgress = scrollProgress;
   document.documentElement.dataset.activeCard = String(activeCardIndex + 1).padStart(2, "0");
@@ -928,6 +1022,8 @@ function resize() {
   galleryRoot.position.y = currentGalleryY;
   particleRoot.rotation.y = galleryRoot.rotation.y;
   particleRoot.position.y = galleryRoot.position.y;
+  renderedSkinListKey = "";
+  updateSkinList();
 }
 
 function animate(timestamp = 0) {
@@ -1036,6 +1132,16 @@ function getScrollMax() {
   return Math.max(scrollingElement.scrollHeight - scrollingElement.clientHeight, 0);
 }
 
+function getCardIndexAtPointer(event) {
+  pointerVec.set(
+    (event.clientX / window.innerWidth) * 2 - 1,
+    -(event.clientY / window.innerHeight) * 2 + 1,
+  );
+  raycaster.setFromCamera(pointerVec, camera);
+  const hits = raycaster.intersectObjects(cardMeshes, false);
+  return hits.length > 0 ? hits[0].object.userData.index : -1;
+}
+
 function scrollPageFromDrag(event) {
   const dx = event.clientX - dragStartX;
   const dy = event.clientY - dragStartY;
@@ -1072,13 +1178,7 @@ function handlePointerMove(event) {
   } else {
     pointerMoveCount += 1;
     if (pointerMoveCount % 3 === 0) {
-      pointerVec.set(
-        (event.clientX / window.innerWidth) * 2 - 1,
-        -(event.clientY / window.innerHeight) * 2 + 1,
-      );
-      raycaster.setFromCamera(pointerVec, camera);
-      const hits = raycaster.intersectObjects(cardMeshes, false);
-      hoveredCardIndex = hits.length > 0 ? hits[0].object.userData.index : -1;
+      hoveredCardIndex = getCardIndexAtPointer(event);
     }
   }
 }
@@ -1093,6 +1193,25 @@ function handlePointerDown(event) {
 }
 
 function handlePointerUp(event) {
+  const dx = event.clientX - dragStartX;
+  const dy = event.clientY - dragStartY;
+  const isClick = !dragAxis && Math.hypot(dx, dy) <= CLICK_MOVE_TOLERANCE;
+
+  isDragging = false;
+  dragAxis = null;
+  if (canvas.hasPointerCapture(event.pointerId)) {
+    canvas.releasePointerCapture(event.pointerId);
+  }
+
+  if (!isClick) return;
+
+  const clickedCardIndex = getCardIndexAtPointer(event);
+  if (clickedCardIndex >= 0) {
+    scrollToCard(clickedCardIndex);
+  }
+}
+
+function handlePointerCancel(event) {
   isDragging = false;
   dragAxis = null;
   if (canvas.hasPointerCapture(event.pointerId)) {
@@ -1150,22 +1269,48 @@ function pauseMusicForFocusLoss() {
   pauseMusic();
 }
 
+function startMusicFromScroll() {
+  if (!musicAudio || musicRequested || !musicAudio.paused || document.visibilityState === "hidden") return;
+
+  startMusic();
+}
+
+function handleScrollKey(event) {
+  if (!event.defaultPrevented && scrollStartKeys.has(event.key)) {
+    startMusicFromScroll();
+  }
+}
+
 buildPanels();
 buildSpine();
 buildParticles();
 buildDots();
-buildSkinList();
+updateSkinList();
 resize();
 requestAnimationFrame(animate);
 
 window.addEventListener("resize", resize);
-window.addEventListener("scroll", updateScrollState, { passive: true });
+window.addEventListener("scroll", () => {
+  updateScrollState();
+  startMusicFromScroll();
+}, { passive: true });
 document.addEventListener("scroll", updateScrollState, { passive: true });
 window.setInterval(updateScrollState, 120);
+window.addEventListener("wheel", startMusicFromScroll, { passive: true });
+window.addEventListener("touchmove", startMusicFromScroll, { passive: true });
+window.addEventListener("keydown", handleScrollKey);
 window.addEventListener("pointermove", handlePointerMove, { passive: false });
 canvas.addEventListener("pointerdown", handlePointerDown);
 canvas.addEventListener("pointerup", handlePointerUp);
-canvas.addEventListener("pointercancel", handlePointerUp);
+canvas.addEventListener("pointercancel", handlePointerCancel);
+skinListEl?.closest(".seek-panel")?.addEventListener("mouseenter", () => setSkinListExpanded(true));
+skinListEl?.closest(".seek-panel")?.addEventListener("mouseleave", () => setSkinListExpanded(false));
+skinListEl?.closest(".seek-panel")?.addEventListener("focusin", () => setSkinListExpanded(true));
+skinListEl?.closest(".seek-panel")?.addEventListener("focusout", (event) => {
+  if (!event.currentTarget.contains(event.relatedTarget)) {
+    setSkinListExpanded(false);
+  }
+});
 
 musicToggle?.addEventListener("click", () => {
   if (musicRequested && !musicAudio?.paused) {

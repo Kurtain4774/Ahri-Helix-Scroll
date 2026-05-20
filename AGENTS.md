@@ -113,12 +113,14 @@ card glow meshes.
 ## Music Notes
 
 The audio element is defined in `index.html` and controlled from `script.js`.
-Music must remain paused until the user clicks the music panel Play button.
-Do not add autoplay or first-gesture retry behavior outside that control.
+Music remains paused until the user clicks the music panel Play button or
+starts scrolling the page.
+Do not add autoplay or unrelated first-gesture retry behavior outside those
+controls.
 If playback is blocked after the Play button is clicked, the panel is marked
 with `needs-interaction`.
 When the page is hidden or loses focus, any playing music should pause and
-should not resume automatically.
+should not resume from focus alone.
 
 The music button uses play/pause symbol text, updates `aria-pressed` and
 `aria-label`, and toggles `is-playing` on `.music-panel`.
@@ -176,7 +178,7 @@ For visual or interaction changes, verify:
 - Do not rename assets unless all references are updated.
 - When changing CSS/JS loaded by `index.html`, update the cache-busting query
   string if the change needs to be visible after deploy.
-  Current query strings are `styles.css?v=fox-spirit-1` and
-  `script.js?v=fox-spirit-2`.
+  Current query strings are `styles.css?v=fox-spirit-4` and
+  `script.js?v=fox-spirit-4`.
 - Be careful with existing uncommitted changes. Treat them as user work unless
   told otherwise.

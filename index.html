@@ -3,8 +3,8 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Ahri</title>
-    <link rel="stylesheet" href="./styles.css?v=scroll-4" />
+    <title>Helix Scroll</title>
+    <link rel="stylesheet" href="./styles.css?v=drag-scroll-1" />
     <script type="importmap">
       {
         "imports": {
@@ -14,17 +14,44 @@
     </script>
   </head>
   <body>
-    <main class="landing" aria-label="Ahri landing page">
+    <main class="landing" aria-label="Helix Scroll immersive gallery">
       <div class="scene-shell" aria-hidden="true">
         <canvas id="helix-canvas"></canvas>
       </div>
 
-      <section class="hero-copy" aria-labelledby="page-title">
+      <nav class="top-nav" aria-label="Primary navigation">
+        <a href="#work">Work</a>
+        <span aria-hidden="true"></span>
+        <a href="#contact">Contact</a>
+      </nav>
+
+      <section class="seek-panel" aria-labelledby="seek-title">
+        <p id="seek-title" class="seek-title">What are you looking for?</p>
+        <ul class="seek-list">
+          <li><a href="#skins">Websites</a></li>
+          <li><a href="#installations">Installations</a></li>
+          <li><a href="#xr">XR / VR / AI</a></li>
+          <li><a href="#stories">Multiplayer</a></li>
+          <li><a href="#games">Games</a></li>
+        </ul>
+        <button class="ask-button" type="button">Ask me anything...</button>
+      </section>
+
+      <section class="music-panel" aria-label="Background music">
+        <div class="music-copy">
+          <span class="music-kicker">Now playing</span>
+          <span class="music-track">Legends Never Die</span>
+        </div>
+        <button class="music-toggle" type="button" aria-pressed="false" aria-label="Play Legends Never Die">Play</button>
+        <audio id="legends-player" class="music-player" src="./assets/Legends%20Never%20Die.mp3" preload="auto" loop autoplay aria-hidden="true"></audio>
+      </section>
+
+      <section class="scene-caption" aria-labelledby="page-title">
+        <p class="eyebrow">Interactive archive</p>
         <h1 id="page-title">Ahri</h1>
-        <p class="lede">the Nine-Tailed Fox</p>
       </section>
     </main>
 
-    <script type="module" src="./script.js?v=title-scroll-1"></script>
+    <script type="module" src="./script.js?v=card-style-2"></script>
   </body>
 </html>

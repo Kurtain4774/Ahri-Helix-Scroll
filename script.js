@@ -1,26 +1,60 @@
 import * as THREE from "three";
 
 const canvas = document.querySelector("#helix-canvas");
-const progressLabel = document.querySelector(".progress-label");
-const heroCopy = document.querySelector(".hero-copy");
+const caption = document.querySelector(".scene-caption");
+const musicPanel = document.querySelector(".music-panel");
+const musicAudio = document.querySelector("#legends-player");
+const musicToggle = document.querySelector(".music-toggle");
+const musicKicker = document.querySelector(".music-kicker");
 
 const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x020606, 0.047);
+
 const renderer = new THREE.WebGLRenderer({
   canvas,
   antialias: true,
   alpha: true,
+  powerPreference: "high-performance",
 });
 
 renderer.setClearColor(0x000000, 0);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.22;
 
-const camera = new THREE.PerspectiveCamera(34, 1, 0.1, 100);
-camera.position.set(0, 0, 10.25);
+const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 80);
+camera.position.set(0.35, 0.15, 10.5);
 
-const helixGroup = new THREE.Group();
-scene.add(helixGroup);
+const root = new THREE.Group();
+const galleryRoot = new THREE.Group();
+const particleRoot = new THREE.Group();
+const panelRoot = new THREE.Group();
+const spineRoot = new THREE.Group();
+scene.add(root);
+root.add(particleRoot, galleryRoot);
+galleryRoot.add(spineRoot, panelRoot);
 
-const cardImages = [
+const clock = new THREE.Clock();
+const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+let animationPaused = reduceMotion.matches;
+let scrollProgress = 0;
+let pointerX = 0;
+let pointerY = 0;
+let dragStartX = 0;
+let dragStartY = 0;
+let dragStartScrollTop = 0;
+let dragAxis = null;
+let scrollRotation = 0;
+let activeCardIndex = 0;
+let targetGalleryY = 0;
+let currentGalleryY = 0;
+let responsiveYOffset = 0;
+let isDragging = false;
+let lastScrollTop = -1;
+let musicRequested = false;
+
+const imageFiles = [
   "340px-Ahri_OriginalSkin.jpg",
   "340px-Ahri_DynastySkin.jpg",
   "340px-Ahri_MidnightSkin.jpg",
@@ -39,52 +73,63 @@ const cardImages = [
   "340px-Ahri_SpiritBlossomSpringsSkin.jpg",
 ];
 
-const CARD_COUNT = cardImages.length;
+const CARD_COUNT = imageFiles.length;
 const CARD_ANGLE_STEP = Math.PI / 3;
 const CARD_ANGLE_OFFSET = 0.35;
 const CARD_ASPECT_RATIO = 340 / 201;
-const CARD_HEIGHT = 1.28;
+const CARD_HEIGHT = 1.84;
 const CARD_WIDTH = CARD_HEIGHT * CARD_ASPECT_RATIO;
-const HELIX_HEIGHT = 16.8;
+const CARD_RADIUS = 2.38;
+const HELIX_HEIGHT = 18.4;
 const HELIX_TURNS = ((CARD_COUNT - 1) * CARD_ANGLE_STEP) / (Math.PI * 2);
 
-const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
-let animationPaused = reduceMotion.matches;
-let scrollRotation = 0;
-let dragOffset = 0;
-let dragStartX = 0;
-let dragStartOffset = 0;
-let scrollProgress = 0;
-let activeCardIndex = 0;
-let targetGroupY = 0;
-let currentGroupY = 0;
-let responsiveYOffset = 0;
-let lastScrollTop = -1;
-let isDragging = false;
-let lastTime = 0;
+window.helixDebug = {
+  cardCount: CARD_COUNT,
+  activeCardIndex,
+  scrollProgress,
+};
+
+const palette = [
+  new THREE.Color("#54ffe2"),
+  new THREE.Color("#a46cff"),
+  new THREE.Color("#ff5bc9"),
+  new THREE.Color("#66ff9a"),
+  new THREE.Color("#4a8cff"),
+  new THREE.Color("#ffb15d"),
+];
+
 const cardMeshes = [];
+const floaters = [];
 
-function makeImageCardTexture(fileName, index) {
-  const textureHeight = 512;
-  const textureWidth = Math.round(textureHeight * CARD_ASPECT_RATIO);
-  const canvasTexture = document.createElement("canvas");
-  canvasTexture.width = textureWidth;
-  canvasTexture.height = textureHeight;
-  const ctx = canvasTexture.getContext("2d");
-  const radius = 42;
-  const inset = 14;
-  const w = textureWidth - inset * 2;
-  const h = textureHeight - inset * 2;
+const keyLight = new THREE.PointLight(0x7effd4, 38, 24);
+keyLight.position.set(2.6, 4.5, 4.6);
+scene.add(keyLight);
 
-  const texture = new THREE.CanvasTexture(canvasTexture);
+const violetLight = new THREE.PointLight(0xbe66ff, 30, 24);
+violetLight.position.set(-3.6, -1.8, 4.2);
+scene.add(violetLight);
+
+const backLight = new THREE.PointLight(0x4b8cff, 20, 28);
+backLight.position.set(0, 2.4, -6);
+scene.add(backLight);
+scene.add(new THREE.AmbientLight(0x8eb8ff, 0.26));
+
+function makePanelTexture(fileName, index, options = {}) {
+  const width = options.width ?? 1024;
+  const height = options.height ?? 640;
+  const drawing = document.createElement("canvas");
+  drawing.width = width;
+  drawing.height = height;
+  const ctx = drawing.getContext("2d");
+  const texture = new THREE.CanvasTexture(drawing);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
 
-  drawCardSurface(ctx, textureWidth, textureHeight, inset, w, h, radius, null, index);
+  drawPanel(ctx, width, height, null, index, options);
 
   const image = new Image();
   image.onload = () => {
-    drawCardSurface(ctx, textureWidth, textureHeight, inset, w, h, radius, image, index);
+    drawPanel(ctx, width, height, image, index, { ...options, fileName });
     texture.needsUpdate = true;
   };
   image.src = `./assets/${encodeURIComponent(fileName)}`;
@@ -92,52 +137,163 @@ function makeImageCardTexture(fileName, index) {
   return texture;
 }
 
-function drawCardSurface(ctx, textureWidth, textureHeight, inset, w, h, radius, image, index) {
-  ctx.clearRect(0, 0, textureWidth, textureHeight);
-  ctx.shadowColor = "rgba(17, 19, 24, 0.26)";
-  ctx.shadowBlur = 30;
-  ctx.shadowOffsetY = 16;
-
-  roundRect(ctx, inset, inset, w, h, radius);
-  ctx.fillStyle = "#ffffff";
-  ctx.fill();
-  ctx.shadowColor = "transparent";
+function drawPanel(ctx, width, height, image, index, options) {
+  const radius = options.radius ?? 58;
+  const inset = 34;
+  const panelWidth = width - inset * 2;
+  const panelHeight = height - inset * 2;
+  ctx.clearRect(0, 0, width, height);
 
   ctx.save();
-  roundRect(ctx, inset, inset, w, h, radius);
+  ctx.shadowColor = "rgba(0, 0, 0, 0.55)";
+  ctx.shadowBlur = 36;
+  ctx.shadowOffsetY = 18;
+  roundedPath(ctx, inset, inset, panelWidth, panelHeight, radius);
+  ctx.fillStyle = "rgba(20, 30, 29, 0.84)";
+  ctx.fill();
+  ctx.restore();
+
+  ctx.save();
+  roundedPath(ctx, inset, inset, panelWidth, panelHeight, radius);
   ctx.clip();
 
   if (image) {
-    drawImageCover(ctx, image, inset, inset, w, h);
+    ctx.save();
+    ctx.filter = "saturate(0.62) contrast(0.88) brightness(0.58)";
+    drawImageCover(ctx, image, inset, inset, panelWidth, panelHeight);
+    ctx.restore();
   } else {
-    const placeholder = ctx.createLinearGradient(0, 0, textureWidth, textureHeight);
-    placeholder.addColorStop(0, "#d9fff2");
-    placeholder.addColorStop(0.55, "#7aa2ff");
-    placeholder.addColorStop(1, "#f9cbff");
-    ctx.fillStyle = placeholder;
-    ctx.fillRect(inset, inset, w, h);
+    const wash = ctx.createLinearGradient(0, 0, width, height);
+    wash.addColorStop(0, "#211b1b");
+    wash.addColorStop(0.44, "#152925");
+    wash.addColorStop(1, "#0d1c1c");
+    ctx.fillStyle = wash;
+    ctx.fillRect(inset, inset, panelWidth, panelHeight);
   }
+
+  ctx.globalCompositeOperation = "source-atop";
+  const tint = ctx.createLinearGradient(inset, inset, width - inset, height - inset);
+  tint.addColorStop(0, "rgba(22, 16, 22, 0.5)");
+  tint.addColorStop(0.42, "rgba(53, 93, 77, 0.46)");
+  tint.addColorStop(0.72, "rgba(12, 34, 34, 0.54)");
+  tint.addColorStop(1, "rgba(127, 87, 54, 0.36)");
+  ctx.fillStyle = tint;
+  ctx.fillRect(inset, inset, panelWidth, panelHeight);
+
+  const vignette = ctx.createRadialGradient(width * 0.56, height * 0.48, 20, width * 0.5, height * 0.5, width * 0.74);
+  vignette.addColorStop(0, "rgba(198, 255, 231, 0.08)");
+  vignette.addColorStop(0.55, "rgba(8, 22, 22, 0.12)");
+  vignette.addColorStop(1, "rgba(0, 0, 0, 0.68)");
+  ctx.fillStyle = vignette;
+  ctx.fillRect(inset, inset, panelWidth, panelHeight);
+
+  const gloss = ctx.createLinearGradient(width * 0.1, height * 0.08, width * 0.92, height * 0.82);
+  gloss.addColorStop(0, "rgba(255, 255, 255, 0)");
+  gloss.addColorStop(0.34, "rgba(228, 255, 245, 0.08)");
+  gloss.addColorStop(0.5, "rgba(255, 255, 255, 0.02)");
+  gloss.addColorStop(1, "rgba(255, 255, 255, 0)");
+  ctx.fillStyle = gloss;
+  ctx.fillRect(inset, inset, panelWidth, panelHeight);
+
+  drawCardGrain(ctx, inset, inset, panelWidth, panelHeight, index);
+  drawCardTitle(ctx, width, height, index, options.fileName);
   ctx.restore();
 
-  ctx.strokeStyle = "rgba(255, 255, 255, 0.92)";
-  ctx.lineWidth = 5;
-  roundRect(ctx, inset + 4, inset + 4, w - 8, h - 8, radius - 4);
+  ctx.save();
+  roundedPath(ctx, inset, inset, panelWidth, panelHeight, radius);
+  ctx.strokeStyle = "rgba(74, 91, 84, 0.82)";
+  ctx.lineWidth = 15;
   ctx.stroke();
 
-  const badgeX = inset + 24;
-  const badgeY = inset + 20;
-  const badgeW = 88;
-  const badgeH = 54;
-  roundRect(ctx, badgeX, badgeY, badgeW, badgeH, 18);
-  ctx.fillStyle = "rgba(0, 0, 0, 0.3)";
-  ctx.fill();
-  ctx.strokeStyle = "rgba(255, 255, 255, 0.7)";
+  roundedPath(ctx, inset + 9, inset + 9, panelWidth - 18, panelHeight - 18, radius - 10);
+  ctx.strokeStyle = "rgba(204, 232, 219, 0.13)";
   ctx.lineWidth = 2;
   ctx.stroke();
 
-  ctx.fillStyle = "rgba(255, 255, 255, 0.92)";
-  ctx.font = "800 36px Inter, Arial, sans-serif";
-  ctx.fillText(String(index + 1).padStart(2, "0"), badgeX + 18, badgeY + 38);
+  roundedPath(ctx, inset - 4, inset - 4, panelWidth + 8, panelHeight + 8, radius + 4);
+  ctx.strokeStyle = "rgba(3, 8, 8, 0.64)";
+  ctx.lineWidth = 4;
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawCardTitle(ctx, width, height, index, fileName = "") {
+  const title = getCardTitle(fileName, index);
+  const lines = splitTitleLines(title);
+  const mainSize = lines.length > 1 ? 64 : 76;
+  const lineHeight = mainSize * 0.98;
+  const startY = height * 0.53 - ((lines.length - 1) * lineHeight) / 2;
+
+  ctx.save();
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.shadowColor = "rgba(96, 255, 235, 0.78)";
+  ctx.shadowBlur = 12;
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = "rgba(42, 82, 90, 0.82)";
+  ctx.fillStyle = "rgba(248, 249, 226, 0.94)";
+
+  ctx.font = "600 34px Georgia, 'Times New Roman', serif";
+  ctx.fillText("Ahri", width / 2, height * 0.38);
+
+  ctx.font = `500 ${mainSize}px Consolas, 'Liberation Mono', monospace`;
+  lines.forEach((line, lineIndex) => {
+    const y = startY + lineIndex * lineHeight;
+    ctx.strokeText(line, width / 2, y);
+    ctx.fillText(line, width / 2, y);
+  });
+
+  ctx.restore();
+}
+
+function getCardTitle(fileName, index) {
+  const fallback = `Skin ${String(index + 1).padStart(2, "0")}`;
+  const match = fileName.match(/Ahri_(.+?)Skin/i);
+  if (!match) return fallback.toUpperCase();
+
+  return match[1]
+    .replace(/KDAALLOUT/g, "KDA ALL OUT")
+    .replace(/KDA/g, "KDA")
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/([A-Z])([A-Z][a-z])/g, "$1 $2")
+    .toUpperCase();
+}
+
+function splitTitleLines(title) {
+  const words = title.split(" ");
+  if (title.length <= 12 || words.length === 1) return [title];
+
+  const lines = [];
+  let current = "";
+  words.forEach((word) => {
+    const next = current ? `${current} ${word}` : word;
+    if (next.length > 13 && current) {
+      lines.push(current);
+      current = word;
+    } else {
+      current = next;
+    }
+  });
+
+  if (current) lines.push(current);
+  return lines.slice(0, 2);
+}
+
+function drawCardGrain(ctx, x, y, width, height, seed) {
+  let value = (seed + 1) * 9301 + 49297;
+  ctx.save();
+  ctx.globalAlpha = 0.16;
+  for (let i = 0; i < 950; i += 1) {
+    value = (value * 233 + 17) % 9973;
+    const px = x + (value / 9973) * width;
+    value = (value * 233 + 17) % 9973;
+    const py = y + (value / 9973) * height;
+    value = (value * 233 + 17) % 9973;
+    const shade = 160 + Math.floor((value / 9973) * 95);
+    ctx.fillStyle = `rgb(${shade}, ${shade}, ${shade})`;
+    ctx.fillRect(px, py, 1, 1);
+  }
+  ctx.restore();
 }
 
 function drawImageCover(ctx, image, x, y, width, height) {
@@ -159,7 +315,7 @@ function drawImageCover(ctx, image, x, y, width, height) {
   ctx.drawImage(image, sourceX, sourceY, sourceWidth, sourceHeight, x, y, width, height);
 }
 
-function roundRect(ctx, x, y, width, height, radius) {
+function roundedPath(ctx, x, y, width, height, radius) {
   ctx.beginPath();
   ctx.moveTo(x + radius, y);
   ctx.lineTo(x + width - radius, y);
@@ -173,144 +329,241 @@ function roundRect(ctx, x, y, width, height, radius) {
   ctx.closePath();
 }
 
-function makeLine(points, color, opacity = 1, width = 1) {
-  const geometry = new THREE.BufferGeometry().setFromPoints(points);
-  const material = new THREE.LineBasicMaterial({
-    color,
-    transparent: opacity < 1,
-    opacity,
-    linewidth: width,
+function makeGlassPanel(fileName, index, config) {
+  const texture = makePanelTexture(fileName, index, {
+    featured: config.featured,
+    width: config.featured ? 1000 : 760,
+    height: config.featured ? 590 : 450,
+    radius: config.featured ? 58 : 48,
   });
-  return new THREE.Line(geometry, material);
+  const geometry = new THREE.PlaneGeometry(config.width, config.height, 1, 1);
+  const material = new THREE.MeshBasicMaterial({
+    map: texture,
+    transparent: true,
+    opacity: config.opacity ?? 0.72,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  });
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.position.set(config.x, config.y, config.z);
+  mesh.rotation.set(config.rx ?? 0, config.ry ?? 0, config.rz ?? 0);
+  mesh.userData = {
+    base: mesh.position.clone(),
+    rotation: mesh.rotation.clone(),
+    float: config.float ?? 0.08,
+    phase: index * 0.83,
+    parallax: config.parallax ?? 0.35,
+    angle: config.angle ?? 0,
+    index,
+    featured: Boolean(config.featured),
+  };
+  mesh.renderOrder = 20 + index;
+  cardMeshes.push(mesh);
+  panelRoot.add(mesh);
 }
 
-function buildHelix() {
-  const spineMaterial = new THREE.MeshBasicMaterial({ color: 0xf5f7fb });
-  const spine = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, HELIX_HEIGHT, 36), spineMaterial);
-  helixGroup.add(spine);
+function buildPanels() {
+  imageFiles.forEach((fileName, index) => {
+    const progress = index / Math.max(1, CARD_COUNT - 1);
+    const y = THREE.MathUtils.lerp(HELIX_HEIGHT / 2 - 0.8, -HELIX_HEIGHT / 2 + 0.8, progress);
+    const angle = CARD_ANGLE_OFFSET - index * CARD_ANGLE_STEP;
+    const radius = CARD_RADIUS + Math.sin(index * 1.37) * 0.18;
+    const x = Math.cos(angle) * radius;
+    const z = Math.sin(angle) * radius;
 
+    makeGlassPanel(fileName, index, {
+      width: CARD_WIDTH,
+      height: CARD_HEIGHT,
+      x,
+      y,
+      z,
+      angle,
+      rz: Math.sin(index * 0.72) * 0.035,
+      opacity: 0.72,
+      float: 0.035,
+      parallax: 0.12,
+    });
+  });
+}
+
+function buildSpine() {
+  const coreMaterial = new THREE.MeshPhysicalMaterial({
+    color: 0x171b24,
+    metalness: 0.78,
+    roughness: 0.34,
+    emissive: 0x3f164d,
+    emissiveIntensity: 0.2,
+    clearcoat: 0.55,
+    clearcoatRoughness: 0.28,
+  });
+
+  const rimMaterial = new THREE.MeshBasicMaterial({
+    color: 0x8cfff0,
+    transparent: true,
+    opacity: 0.2,
+    depthWrite: false,
+  });
+
+  const vertebraGeometry = new THREE.TorusKnotGeometry(0.38, 0.16, 48, 6, 2, 3);
+  const haloGeometry = new THREE.TorusGeometry(0.62, 0.014, 8, 80);
+
+  const vertebraCount = 23;
+  for (let i = 0; i < vertebraCount; i += 1) {
+    const progress = i / Math.max(1, vertebraCount - 1);
+    const y = THREE.MathUtils.lerp(HELIX_HEIGHT / 2, -HELIX_HEIGHT / 2, progress);
+    const vertebra = new THREE.Mesh(vertebraGeometry, coreMaterial);
+    vertebra.position.set(0.08 * Math.sin(i * 0.9), y, -0.18);
+    vertebra.rotation.set(i * 0.22, i * 0.56, Math.PI * 0.48 + i * 0.18);
+    vertebra.scale.set(0.82 + Math.sin(i) * 0.1, 0.46, 0.92);
+    vertebra.userData.phase = i * 0.4;
+    spineRoot.add(vertebra);
+    floaters.push(vertebra);
+
+    if (i % 2 === 0) {
+      const halo = new THREE.Mesh(haloGeometry, rimMaterial);
+      halo.position.set(0, y + 0.05, -0.14);
+      halo.rotation.set(Math.PI / 2, i * 0.22, 0);
+      halo.scale.set(1.08, 0.74, 1);
+      spineRoot.add(halo);
+    }
+  }
+
+  const railGeometryA = new THREE.BufferGeometry();
+  const railGeometryB = new THREE.BufferGeometry();
   const railA = [];
   const railB = [];
-  const radius = 0.58;
-
-  for (let i = 0; i <= 560; i += 1) {
-    const progress = i / 560;
+  const railRadius = 0.74;
+  for (let i = 0; i <= 640; i += 1) {
+    const progress = i / 640;
     const angle = progress * Math.PI * 2 * HELIX_TURNS;
-    const y = THREE.MathUtils.lerp(-HELIX_HEIGHT / 2, HELIX_HEIGHT / 2, progress);
-    railA.push(new THREE.Vector3(Math.cos(angle) * radius, y, Math.sin(angle) * radius));
-    railB.push(new THREE.Vector3(Math.cos(angle + Math.PI) * radius, y, Math.sin(angle + Math.PI) * radius));
+    const y = THREE.MathUtils.lerp(HELIX_HEIGHT / 2, -HELIX_HEIGHT / 2, progress);
+    railA.push(new THREE.Vector3(Math.cos(angle) * railRadius, y, Math.sin(angle) * railRadius));
+    railB.push(new THREE.Vector3(Math.cos(angle + Math.PI) * railRadius, y, Math.sin(angle + Math.PI) * railRadius));
   }
-
-  helixGroup.add(makeLine(railA, 0x7df2d0, 0.62));
-  helixGroup.add(makeLine(railB, 0xff6fb7, 0.32));
-
-  const cardGeometry = new THREE.PlaneGeometry(CARD_WIDTH, CARD_HEIGHT);
-  const cardRadius = 1.72;
-  const count = cardImages.length;
-
-  cardImages.forEach((fileName, index) => {
-    const progress = index / (count - 1);
-    const y = THREE.MathUtils.lerp(HELIX_HEIGHT / 2 - 0.75, -HELIX_HEIGHT / 2 + 0.75, progress);
-    const angle = CARD_ANGLE_OFFSET - index * CARD_ANGLE_STEP;
-    const x = Math.cos(angle) * cardRadius;
-    const z = Math.sin(angle) * cardRadius;
-    const texture = makeImageCardTexture(fileName, index);
-
-    const material = new THREE.MeshBasicMaterial({
-      map: texture,
-      transparent: true,
-      side: THREE.DoubleSide,
-      depthWrite: false,
-    });
-
-    const card = new THREE.Mesh(cardGeometry, material);
-    card.position.set(x, y, z);
-    card.rotation.y = 0;
-    card.rotation.z = 0;
-    card.userData.home = card.position.clone();
-    card.userData.angle = angle;
-    card.userData.floatPhase = index * 0.65;
-    card.userData.index = index;
-    cardMeshes.push(card);
-    helixGroup.add(card);
-  });
-}
-
-function addLightRings() {
-  const ringMaterial = new THREE.LineBasicMaterial({
-    color: 0x7df2d0,
+  railGeometryA.setFromPoints(railA);
+  railGeometryB.setFromPoints(railB);
+  spineRoot.add(new THREE.Line(railGeometryA, new THREE.LineBasicMaterial({
+    color: 0x59ffe0,
     transparent: true,
-    opacity: 0.18,
-  });
-  const ringGeometry = new THREE.BufferGeometry();
-  const ringPoints = [];
+    opacity: 0.32,
+  })));
+  spineRoot.add(new THREE.Line(railGeometryB, new THREE.LineBasicMaterial({
+    color: 0xff63ca,
+    transparent: true,
+    opacity: 0.2,
+  })));
 
-  for (let i = 0; i <= 140; i += 1) {
-    const angle = (i / 140) * Math.PI * 2;
-    ringPoints.push(new THREE.Vector3(Math.cos(angle) * 2.28, 0, Math.sin(angle) * 2.28));
+  const chainMaterial = new THREE.MeshBasicMaterial({
+    color: 0x207dff,
+    transparent: true,
+    opacity: 0.34,
+  });
+  const linkGeometry = new THREE.TorusGeometry(0.11, 0.018, 8, 22);
+  for (let i = 0; i < 56; i += 1) {
+    const link = new THREE.Mesh(linkGeometry, chainMaterial);
+    link.position.set(-0.62 + Math.sin(i * 0.55) * 0.06, HELIX_HEIGHT / 2 - 1.0 - i * 0.24, 0.22);
+    link.rotation.set(Math.PI / 2, i * 0.55, 0.2);
+    spineRoot.add(link);
+  }
+}
+
+function addParticleSet(name, count, createPoint, size, opacity) {
+  const positions = new Float32Array(count * 3);
+  const colors = new Float32Array(count * 3);
+  const phases = new Float32Array(count);
+
+  for (let i = 0; i < count; i += 1) {
+    const point = createPoint(i, count);
+    const color = palette[Math.floor(Math.random() * palette.length)].clone();
+    color.lerp(new THREE.Color(0xffffff), Math.random() * 0.18);
+
+    positions[i * 3] = point.x;
+    positions[i * 3 + 1] = point.y;
+    positions[i * 3 + 2] = point.z;
+    colors[i * 3] = color.r;
+    colors[i * 3 + 1] = color.g;
+    colors[i * 3 + 2] = color.b;
+    phases[i] = Math.random() * Math.PI * 2;
   }
 
-  ringGeometry.setFromPoints(ringPoints);
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+  geometry.userData.base = positions.slice();
+  geometry.userData.phases = phases;
 
-  [-7.2, -4.8, -2.4, 0, 2.4, 4.8, 7.2].forEach((y) => {
-    const ring = new THREE.Line(ringGeometry, ringMaterial);
-    ring.position.y = y;
-    ring.rotation.x = Math.PI / 2;
-    helixGroup.add(ring);
+  const material = new THREE.PointsMaterial({
+    size,
+    transparent: true,
+    opacity,
+    vertexColors: true,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    sizeAttenuation: true,
   });
+
+  const points = new THREE.Points(geometry, material);
+  points.name = name;
+  particleRoot.add(points);
+  return points;
 }
 
-function resize() {
-  const width = window.innerWidth;
-  const height = window.innerHeight;
-  renderer.setSize(width, height, false);
-  camera.aspect = width / height;
+function buildParticles() {
+  addParticleSet(
+    "column",
+    window.innerWidth < 700 ? 4200 : 7600,
+    () => {
+      const column = Math.random() < 0.54 ? -0.72 : 0.72;
+      const radius = Math.pow(Math.random(), 1.9) * 1.48;
+      const angle = Math.random() * Math.PI * 2;
+      return {
+        x: column + Math.cos(angle) * radius * 0.82,
+        y: THREE.MathUtils.randFloatSpread(7.4),
+        z: -0.28 + Math.sin(angle) * radius * 0.62 + THREE.MathUtils.randFloatSpread(0.8),
+      };
+    },
+    0.033,
+    0.78,
+  );
 
-  if (width < 600) {
-    camera.position.z = 13.2;
-    helixGroup.scale.setScalar(0.82);
-    responsiveYOffset = 0;
-  } else if (width < 980) {
-    camera.position.z = 12.4;
-    helixGroup.scale.setScalar(0.92);
-    responsiveYOffset = 0;
-  } else {
-    camera.position.z = 11.85;
-    helixGroup.scale.setScalar(1);
-    responsiveYOffset = 0;
-  }
+  addParticleSet(
+    "ribbonA",
+    window.innerWidth < 700 ? 1800 : 3200,
+    (i, count) => {
+      const t = i / Math.max(1, count - 1);
+      const x = THREE.MathUtils.lerp(-7.8, 7.8, t);
+      return {
+        x: x + THREE.MathUtils.randFloatSpread(0.34),
+        y: Math.sin(t * Math.PI * 3.1 + 0.4) * 0.48 + 0.9 + THREE.MathUtils.randFloatSpread(0.26),
+        z: -1.42 + Math.cos(t * Math.PI * 2.2) * 0.9 + THREE.MathUtils.randFloatSpread(0.32),
+      };
+    },
+    0.024,
+    0.56,
+  );
 
-  camera.updateProjectionMatrix();
-  lastScrollTop = -1;
-  updateScrollState();
-  helixGroup.rotation.y = scrollRotation + dragOffset;
-  updateFocusedCardTarget();
-  currentGroupY = targetGroupY;
-  helixGroup.position.x = 0;
-  helixGroup.position.y = currentGroupY;
+  addParticleSet(
+    "ribbonB",
+    window.innerWidth < 700 ? 1700 : 3000,
+    (i, count) => {
+      const t = i / Math.max(1, count - 1);
+      const x = THREE.MathUtils.lerp(-7.6, 7.6, t);
+      return {
+        x: x + THREE.MathUtils.randFloatSpread(0.28),
+        y: Math.sin(t * Math.PI * 2.4 + 2.2) * 0.36 - 2.28 + THREE.MathUtils.randFloatSpread(0.2),
+        z: -0.82 + Math.sin(t * Math.PI * 4.4) * 0.5 + THREE.MathUtils.randFloatSpread(0.28),
+      };
+    },
+    0.022,
+    0.48,
+  );
 }
 
-function updateScrollState() {
-  const scrollingElement = document.scrollingElement || document.documentElement;
-  const scrollTop = scrollingElement.scrollTop;
-  const scrollMax = Math.max(scrollingElement.scrollHeight - scrollingElement.clientHeight, 1);
-
-  if (scrollTop === lastScrollTop) return;
-
-  lastScrollTop = scrollTop;
-  scrollProgress = THREE.MathUtils.clamp(scrollTop / scrollMax, 0, 1);
-  activeCardIndex = Math.round(scrollProgress * (cardImages.length - 1));
-  scrollRotation = getCardFocusRotation(activeCardIndex);
-  updateFocusedCardTarget();
-  updateHeroCopyPosition(scrollTop);
-
-  updateProgressLabel();
-}
-
-function updateHeroCopyPosition(scrollTop) {
-  if (!heroCopy) return;
-
-  heroCopy.style.setProperty("--hero-copy-y", `${-scrollTop}px`);
+function animateParticles(time) {
+  particleRoot.children.forEach((points, setIndex) => {
+    points.rotation.y = Math.sin(time * (0.11 + setIndex * 0.025)) * 0.08;
+    points.rotation.x = Math.cos(time * (0.09 + setIndex * 0.02)) * 0.025;
+  });
 }
 
 function getCardFocusRotation(index) {
@@ -319,101 +572,299 @@ function getCardFocusRotation(index) {
 }
 
 function getInteractionFocusIndex() {
-  const dragIndexOffset = dragOffset / CARD_ANGLE_STEP;
-  return THREE.MathUtils.clamp(activeCardIndex - dragIndexOffset, 0, cardImages.length - 1);
+  return activeCardIndex;
 }
 
 function getCardYAtIndex(index) {
-  const progress = index / (cardImages.length - 1);
-  return THREE.MathUtils.lerp(HELIX_HEIGHT / 2 - 0.75, -HELIX_HEIGHT / 2 + 0.75, progress);
+  const progress = index / Math.max(1, CARD_COUNT - 1);
+  return THREE.MathUtils.lerp(HELIX_HEIGHT / 2 - 0.8, -HELIX_HEIGHT / 2 + 0.8, progress);
 }
 
 function updateFocusedCardTarget() {
-  const scale = helixGroup.scale.x;
   const focusY = getCardYAtIndex(getInteractionFocusIndex());
-
-  targetGroupY = -focusY * scale + responsiveYOffset;
+  targetGalleryY = -focusY * galleryRoot.scale.x + responsiveYOffset;
 }
 
-function updateProgressLabel() {
-  if (!progressLabel) return;
-
-  const displayIndex = Math.round(getInteractionFocusIndex());
-  progressLabel.textContent = String(displayIndex + 1).padStart(2, "0");
+function getCardRenderOrder(base, rotationY) {
+  const depth = -base.x * Math.sin(rotationY) + base.z * Math.cos(rotationY);
+  return Math.round((depth + 10) * 1000);
 }
 
-function animate(time = 0) {
-  lastTime = time;
+function updateScrollState() {
+  const scrollingElement = document.scrollingElement || document.documentElement;
+  const scrollTop = scrollingElement.scrollTop;
+  if (scrollTop === lastScrollTop) return;
+
+  lastScrollTop = scrollTop;
+  const scrollMax = Math.max(scrollingElement.scrollHeight - scrollingElement.clientHeight, 1);
+  scrollProgress = THREE.MathUtils.clamp(scrollTop / scrollMax, 0, 1);
+  activeCardIndex = Math.round(scrollProgress * (CARD_COUNT - 1));
+  scrollRotation = getCardFocusRotation(activeCardIndex);
+  updateFocusedCardTarget();
+  window.helixDebug.activeCardIndex = activeCardIndex;
+  window.helixDebug.scrollProgress = scrollProgress;
+  document.documentElement.dataset.activeCard = String(activeCardIndex + 1).padStart(2, "0");
+
+  if (caption) {
+    caption.style.setProperty("--caption-opacity", String(THREE.MathUtils.clamp(1 - scrollProgress * 3, 0, 0.92)));
+  }
+}
+
+function resize() {
+  const width = window.innerWidth;
+  const height = window.innerHeight;
+  renderer.setSize(width, height, false);
+  camera.aspect = width / height;
+
+  if (width < 560) {
+    camera.position.z = 12.9;
+    root.scale.setScalar(0.76);
+    root.position.x = 0.3;
+    galleryRoot.scale.setScalar(0.82);
+    responsiveYOffset = 0.18;
+  } else if (width < 980) {
+    camera.position.z = 12;
+    root.scale.setScalar(0.88);
+    root.position.x = 0.14;
+    galleryRoot.scale.setScalar(0.9);
+    responsiveYOffset = 0.08;
+  } else {
+    camera.position.z = 10.5;
+    root.scale.setScalar(1);
+    root.position.x = 0;
+    galleryRoot.scale.setScalar(1);
+    responsiveYOffset = 0;
+  }
+
+  camera.updateProjectionMatrix();
+  lastScrollTop = -1;
+  updateScrollState();
+  galleryRoot.rotation.y = scrollRotation;
+  updateFocusedCardTarget();
+  currentGalleryY = targetGalleryY;
+  galleryRoot.position.y = currentGalleryY;
+}
+
+function animate() {
+  const elapsed = clock.getElapsedTime();
   updateScrollState();
 
-  const targetRotation = scrollRotation + dragOffset;
-  helixGroup.rotation.y = THREE.MathUtils.lerp(helixGroup.rotation.y, targetRotation, 0.08);
+  const motionTime = animationPaused ? 0 : elapsed;
+  const targetRotation = scrollRotation + pointerX * 0.035;
+
+  root.rotation.y = pointerX * 0.035;
+  root.rotation.x = pointerY * -0.035;
+  root.position.y = THREE.MathUtils.lerp(root.position.y, 0, 0.05);
+  galleryRoot.rotation.y = THREE.MathUtils.lerp(galleryRoot.rotation.y, targetRotation, 0.08);
   updateFocusedCardTarget();
-  updateProgressLabel();
+  currentGalleryY = THREE.MathUtils.lerp(currentGalleryY, targetGalleryY, 0.075);
+  galleryRoot.position.y = currentGalleryY;
+  camera.position.x = THREE.MathUtils.lerp(camera.position.x, 0.35 + pointerX * 0.24, 0.05);
+  camera.position.y = THREE.MathUtils.lerp(camera.position.y, 0.15 + pointerY * 0.16, 0.05);
+  camera.lookAt(0, 0, 0);
 
-  currentGroupY = THREE.MathUtils.lerp(currentGroupY, targetGroupY, 0.075);
-  helixGroup.position.x = 0;
-  helixGroup.position.y = currentGroupY;
-  helixGroup.rotation.x = 0;
+  panelRoot.children.forEach((mesh) => {
+    const { base, rotation, float, phase, parallax, index } = mesh.userData;
+    const focusIndex = getInteractionFocusIndex();
+    const distance = Math.abs(index - focusIndex);
+    const focusWeight = THREE.MathUtils.clamp(1 - distance / 2.15, 0, 1);
+    const flatRotation = -galleryRoot.rotation.y - root.rotation.y;
 
-  helixGroup.children.forEach((child) => {
-    if (!child.userData.home) return;
-    const floatAmount = animationPaused
-      ? 0
-      : Math.sin(time * 0.001 + child.userData.floatPhase) * 0.035;
-    const flatRotation = -helixGroup.rotation.y;
-
-    child.position.y = child.userData.home.y + floatAmount;
-    child.rotation.y = flatRotation;
-    child.rotation.z = 0;
-    child.renderOrder = getCardRenderOrder(child.userData.home, helixGroup.rotation.y);
+    mesh.position.x = base.x + pointerX * parallax + Math.sin(motionTime * 0.42 + phase) * float;
+    mesh.position.y = base.y + Math.cos(motionTime * 0.38 + phase) * float;
+    mesh.position.z = base.z + Math.sin(motionTime * 0.32 + phase) * float * 0.7;
+    mesh.rotation.y = flatRotation + pointerX * 0.018;
+    mesh.rotation.x = rotation.x + pointerY * 0.04;
+    mesh.rotation.z = rotation.z * (0.55 + focusWeight * 0.45);
+    mesh.scale.setScalar(0.84 + focusWeight * 0.24);
+    mesh.material.opacity = 0.26 + focusWeight * 0.56;
+    mesh.renderOrder = getCardRenderOrder(base, galleryRoot.rotation.y);
   });
+
+  floaters.forEach((mesh) => {
+    mesh.rotation.y += animationPaused ? 0 : 0.0025;
+    mesh.position.x += Math.sin(motionTime * 0.8 + mesh.userData.phase) * 0.0008;
+  });
+
+  if (!animationPaused) {
+    animateParticles(elapsed);
+    particleRoot.rotation.y = Math.sin(elapsed * 0.12) * 0.08;
+  }
 
   renderer.render(scene, camera);
   requestAnimationFrame(animate);
 }
 
-function getCardRenderOrder(home, rotationY) {
-  const depth = -home.x * Math.sin(rotationY) + home.z * Math.cos(rotationY);
-  return Math.round((depth + 10) * 1000);
+function getScrollingElement() {
+  return document.scrollingElement || document.documentElement;
 }
 
-function setMotionState(paused) {
-  animationPaused = paused;
+function getScrollTop() {
+  return getScrollingElement().scrollTop;
+}
+
+function getScrollMax() {
+  const scrollingElement = getScrollingElement();
+  return Math.max(scrollingElement.scrollHeight - scrollingElement.clientHeight, 0);
+}
+
+function scrollPageFromDrag(event) {
+  const dx = event.clientX - dragStartX;
+  const dy = event.clientY - dragStartY;
+  const absX = Math.abs(dx);
+  const absY = Math.abs(dy);
+
+  if (!dragAxis && Math.max(absX, absY) > 6) {
+    dragAxis = absX > absY ? "x" : "y";
+  }
+
+  if (!dragAxis) return;
+
+  if (event.cancelable) {
+    event.preventDefault();
+  }
+
+  const dragDistance = dragAxis === "x" ? -dx : -dy;
+  const scrollMultiplier = dragAxis === "x" ? 1.45 : 1;
+  const nextScrollTop = THREE.MathUtils.clamp(
+    dragStartScrollTop + dragDistance * scrollMultiplier,
+    0,
+    getScrollMax(),
+  );
+
+  window.scrollTo({
+    top: nextScrollTop,
+    behavior: "auto",
+  });
+}
+
+function handlePointerMove(event) {
+  pointerX = (event.clientX / window.innerWidth - 0.5) * 2;
+  pointerY = (event.clientY / window.innerHeight - 0.5) * 2;
+
+  if (isDragging) {
+    scrollPageFromDrag(event);
+  }
 }
 
 function handlePointerDown(event) {
   isDragging = true;
   dragStartX = event.clientX;
-  dragStartOffset = dragOffset;
+  dragStartY = event.clientY;
+  dragStartScrollTop = getScrollTop();
+  dragAxis = null;
   canvas.setPointerCapture(event.pointerId);
-}
-
-function handlePointerMove(event) {
-  if (!isDragging) return;
-  const distance = event.clientX - dragStartX;
-  dragOffset = dragStartOffset + distance * 0.008;
-  updateFocusedCardTarget();
-  updateProgressLabel();
 }
 
 function handlePointerUp(event) {
   isDragging = false;
-  canvas.releasePointerCapture(event.pointerId);
+  dragAxis = null;
+  if (canvas.hasPointerCapture(event.pointerId)) {
+    canvas.releasePointerCapture(event.pointerId);
+  }
 }
 
-buildHelix();
-addLightRings();
+function updateMusicButton(isPlaying) {
+  if (!musicToggle) return;
+
+  musicToggle.textContent = isPlaying ? "Pause" : "Play";
+  musicToggle.setAttribute("aria-pressed", String(isPlaying));
+  musicToggle.setAttribute("aria-label", `${isPlaying ? "Pause" : "Play"} Legends Never Die`);
+  if (musicKicker) {
+    musicKicker.textContent = isPlaying ? "Now playing" : "Tap to play";
+  }
+  musicPanel?.classList.toggle("is-playing", isPlaying);
+}
+
+function startMusic() {
+  if (!musicAudio) return;
+
+  musicRequested = true;
+  musicPanel?.classList.remove("needs-interaction");
+  musicAudio.volume = 0.72;
+  const playAttempt = musicAudio.play();
+
+  if (playAttempt) {
+    playAttempt
+      .then(() => updateMusicButton(true))
+      .catch(() => {
+        musicRequested = false;
+        updateMusicButton(false);
+        musicPanel?.classList.add("needs-interaction");
+      });
+  } else {
+    updateMusicButton(true);
+  }
+}
+
+function pauseMusic() {
+  if (!musicAudio) return;
+
+  musicRequested = false;
+  musicAudio.pause();
+  updateMusicButton(false);
+}
+
+function initMusic() {
+  startMusic();
+}
+
+buildPanels();
+buildSpine();
+buildParticles();
 resize();
 requestAnimationFrame(animate);
 
+window.addEventListener("load", initMusic, { once: true });
 window.addEventListener("resize", resize);
 window.addEventListener("scroll", updateScrollState, { passive: true });
 document.addEventListener("scroll", updateScrollState, { passive: true });
+window.addEventListener("pointermove", handlePointerMove, { passive: false });
 canvas.addEventListener("pointerdown", handlePointerDown);
-canvas.addEventListener("pointermove", handlePointerMove);
 canvas.addEventListener("pointerup", handlePointerUp);
 canvas.addEventListener("pointercancel", handlePointerUp);
-window.setInterval(updateScrollState, 120);
 
-reduceMotion.addEventListener("change", (event) => setMotionState(event.matches));
+musicToggle?.addEventListener("click", () => {
+  if (musicRequested && !musicAudio?.paused) {
+    pauseMusic();
+  } else {
+    startMusic();
+  }
+});
+
+window.addEventListener(
+  "pointerdown",
+  (event) => {
+    if (event.target instanceof Element && event.target.closest(".music-panel")) {
+      return;
+    }
+
+    if (!musicRequested && musicAudio?.paused) {
+      startMusic();
+    }
+  },
+  { once: true, passive: true },
+);
+
+window.addEventListener(
+  "keydown",
+  () => {
+    if (!musicRequested && musicAudio?.paused) {
+      startMusic();
+    }
+  },
+  { once: true },
+);
+
+musicAudio?.addEventListener("play", () => {
+  musicRequested = true;
+  updateMusicButton(true);
+});
+musicAudio?.addEventListener("pause", () => {
+  musicRequested = false;
+  updateMusicButton(false);
+});
+
+reduceMotion.addEventListener("change", (event) => {
+  animationPaused = event.matches;
+});

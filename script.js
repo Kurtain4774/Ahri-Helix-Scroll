@@ -2,6 +2,42 @@ import * as THREE from "three";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
+import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
+
+const PARTICLE_VERT = /* glsl */`
+attribute vec3 aBasePos;
+attribute float aPhase;
+attribute vec3 aColor;
+uniform float uTime;
+uniform float uSizeScale;
+uniform float uOpacity;
+varying vec3 vColor;
+varying float vAlpha;
+
+void main() {
+  vColor = aColor;
+  vec3 pos = aBasePos;
+  pos.x += sin(uTime * 0.38 + aPhase) * 0.14;
+  pos.y += cos(uTime * 0.32 + aPhase) * 0.12;
+  pos.z += sin(uTime * 0.44 + aPhase + 1.5708) * 0.10;
+  vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
+  gl_PointSize = uSizeScale / -mvPosition.z;
+  gl_Position = projectionMatrix * mvPosition;
+  vAlpha = uOpacity;
+}
+`;
+
+const PARTICLE_FRAG = /* glsl */`
+varying vec3 vColor;
+varying float vAlpha;
+
+void main() {
+  vec2 uv = gl_PointCoord - 0.5;
+  float d = dot(uv, uv) * 4.0;
+  if (d > 1.0) discard;
+  gl_FragColor = vec4(vColor, (1.0 - d) * vAlpha);
+}
+`;
 
 const canvas = document.querySelector("#helix-canvas");
 const caption = document.querySelector(".scene-caption");
@@ -58,11 +94,12 @@ camera.position.set(0.35, 0.15, 10.5);
 const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
 const bloomPass = new UnrealBloomPass(
-  new THREE.Vector2(window.innerWidth, window.innerHeight),
+  new THREE.Vector2(Math.floor(window.innerWidth / 2), Math.floor(window.innerHeight / 2)),
   0.72,
   0.42,
   0.58,
 );
+bloomPass.nMips = 3;
 composer.addPass(bloomPass);
 
 const root = new THREE.Group();
@@ -94,6 +131,9 @@ let lastScrollTop = -1;
 let musicRequested = false;
 let firstRenderDone = false;
 let scrollHintHidden = false;
+let pointerMoveCount = 0;
+const FRAME_BUDGET_MS = 1000 / 60;
+let lastFrameTime = 0;
 
 const imageFiles = [
   "340px-Ahri_OriginalSkin.jpg",
@@ -149,6 +189,7 @@ const particleRingColors = [
 
 const cardMeshes = [];
 const floaters = [];
+const particleMaterials = [];
 let hoveredCardIndex = -1;
 let hoverGlowLight = null;
 const raycaster = new THREE.Raycaster();
@@ -534,9 +575,12 @@ function buildSpine() {
   });
 
   const vertebraGeometry = new THREE.TorusKnotGeometry(0.38, 0.16, 48, 6, 2, 3);
-  const haloGeometry = new THREE.TorusGeometry(0.62, 0.014, 8, 80);
+  const haloSourceGeometry = new THREE.TorusGeometry(0.62, 0.014, 8, 80);
 
   const vertebraCount = 23;
+  const haloGeos = [];
+  const haloDummy = new THREE.Object3D();
+
   for (let i = 0; i < vertebraCount; i += 1) {
     const progress = i / Math.max(1, vertebraCount - 1);
     const y = THREE.MathUtils.lerp(HELIX_HEIGHT / 2, -HELIX_HEIGHT / 2, progress);
@@ -549,13 +593,19 @@ function buildSpine() {
     floaters.push(vertebra);
 
     if (i % 2 === 0) {
-      const halo = new THREE.Mesh(haloGeometry, rimMaterial);
-      halo.position.set(0, y + 0.05, -0.14);
-      halo.rotation.set(Math.PI / 2, i * 0.22, 0);
-      halo.scale.set(1.08, 0.74, 1);
-      spineRoot.add(halo);
+      const geo = haloSourceGeometry.clone();
+      haloDummy.position.set(0, y + 0.05, -0.14);
+      haloDummy.rotation.set(Math.PI / 2, i * 0.22, 0);
+      haloDummy.scale.set(1.08, 0.74, 1);
+      haloDummy.updateMatrix();
+      geo.applyMatrix4(haloDummy.matrix);
+      haloGeos.push(geo);
     }
   }
+
+  spineRoot.add(new THREE.Mesh(mergeGeometries(haloGeos), rimMaterial));
+  haloGeos.forEach((g) => g.dispose());
+  haloSourceGeometry.dispose();
 
   const railA = [];
   const railB = [];
@@ -633,8 +683,14 @@ function buildSpine() {
   galleryRoot.add(hoverGlowLight);
 }
 
+function particleSizeScale(size) {
+  const h = renderer.getSize(new THREE.Vector2()).height * renderer.getPixelRatio();
+  const projY = 1.0 / Math.tan((camera.fov * Math.PI) / 360);
+  return size * projY * h * 0.5;
+}
+
 function addParticleSet(name, count, createPoint, size, opacity) {
-  const positions = new Float32Array(count * 3);
+  const basePos = new Float32Array(count * 3);
   const colors = new Float32Array(count * 3);
   const phases = new Float32Array(count);
 
@@ -646,9 +702,9 @@ function addParticleSet(name, count, createPoint, size, opacity) {
     color.lerp(new THREE.Color(0xffffff), 0.18 + Math.random() * 0.16);
     color.multiplyScalar(1.65);
 
-    positions[i * 3] = point.x;
-    positions[i * 3 + 1] = point.y;
-    positions[i * 3 + 2] = point.z;
+    basePos[i * 3] = point.x;
+    basePos[i * 3 + 1] = point.y;
+    basePos[i * 3 + 2] = point.z;
     colors[i * 3] = color.r;
     colors[i * 3 + 1] = color.g;
     colors[i * 3 + 2] = color.b;
@@ -656,20 +712,25 @@ function addParticleSet(name, count, createPoint, size, opacity) {
   }
 
   const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-  geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-  geometry.userData.base = positions.slice();
-  geometry.userData.phases = phases;
+  geometry.setAttribute("position", new THREE.BufferAttribute(basePos.slice(), 3));
+  geometry.setAttribute("aBasePos", new THREE.BufferAttribute(basePos, 3));
+  geometry.setAttribute("aColor", new THREE.BufferAttribute(colors, 3));
+  geometry.setAttribute("aPhase", new THREE.BufferAttribute(phases, 1));
 
-  const material = new THREE.PointsMaterial({
-    size,
+  const material = new THREE.ShaderMaterial({
+    vertexShader: PARTICLE_VERT,
+    fragmentShader: PARTICLE_FRAG,
+    uniforms: {
+      uTime: { value: 0 },
+      uSizeScale: { value: particleSizeScale(size) },
+      uOpacity: { value: opacity },
+    },
     transparent: true,
-    opacity,
-    vertexColors: true,
     blending: THREE.AdditiveBlending,
     depthWrite: false,
-    sizeAttenuation: true,
   });
+  material.userData.baseSize = size;
+  particleMaterials.push(material);
 
   const points = new THREE.Points(geometry, material);
   points.name = name;
@@ -831,7 +892,11 @@ function resize() {
   const height = window.innerHeight;
   renderer.setSize(width, height, false);
   composer.setSize(width, height);
-  bloomPass.setSize(width, height);
+  bloomPass.setSize(Math.floor(width / 2), Math.floor(height / 2));
+
+  particleMaterials.forEach((mat) => {
+    mat.uniforms.uSizeScale.value = particleSizeScale(mat.userData.baseSize);
+  });
   camera.aspect = width / height;
 
   if (width < 560) {
@@ -865,11 +930,16 @@ function resize() {
   particleRoot.position.y = galleryRoot.position.y;
 }
 
-function animate() {
+function animate(timestamp = 0) {
+  requestAnimationFrame(animate);
+  if (timestamp - lastFrameTime < FRAME_BUDGET_MS - 1) return;
+  lastFrameTime = timestamp;
+
   const elapsed = clock.getElapsedTime();
   updateScrollState();
 
   const motionTime = animationPaused ? 0 : elapsed;
+  particleMaterials.forEach((mat) => { mat.uniforms.uTime.value = motionTime; });
   const targetRotation = scrollRotation + pointerX * 0.035;
 
   root.rotation.y = pointerX * 0.035;
@@ -951,8 +1021,6 @@ function animate() {
     firstRenderDone = true;
     canvas.classList.add("ready");
   }
-
-  requestAnimationFrame(animate);
 }
 
 function getScrollingElement() {
@@ -1002,13 +1070,16 @@ function handlePointerMove(event) {
   if (isDragging) {
     scrollPageFromDrag(event);
   } else {
-    pointerVec.set(
-      (event.clientX / window.innerWidth) * 2 - 1,
-      -(event.clientY / window.innerHeight) * 2 + 1,
-    );
-    raycaster.setFromCamera(pointerVec, camera);
-    const hits = raycaster.intersectObjects(cardMeshes, false);
-    hoveredCardIndex = hits.length > 0 ? hits[0].object.userData.index : -1;
+    pointerMoveCount += 1;
+    if (pointerMoveCount % 3 === 0) {
+      pointerVec.set(
+        (event.clientX / window.innerWidth) * 2 - 1,
+        -(event.clientY / window.innerHeight) * 2 + 1,
+      );
+      raycaster.setFromCamera(pointerVec, camera);
+      const hits = raycaster.intersectObjects(cardMeshes, false);
+      hoveredCardIndex = hits.length > 0 ? hits[0].object.userData.index : -1;
+    }
   }
 }
 
@@ -1073,6 +1144,12 @@ function pauseMusic() {
   updateMusicButton(false);
 }
 
+function pauseMusicForFocusLoss() {
+  if (!musicAudio || musicAudio.paused) return;
+
+  pauseMusic();
+}
+
 buildPanels();
 buildSpine();
 buildParticles();
@@ -1097,6 +1174,14 @@ musicToggle?.addEventListener("click", () => {
     startMusic();
   }
 });
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") {
+    pauseMusicForFocusLoss();
+  }
+});
+window.addEventListener("blur", pauseMusicForFocusLoss);
+window.addEventListener("pagehide", pauseMusicForFocusLoss);
 
 musicAudio?.addEventListener("play", () => {
   musicRequested = true;

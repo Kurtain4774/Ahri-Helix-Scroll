@@ -8,7 +8,7 @@ const musicToggle = document.querySelector(".music-toggle");
 const musicKicker = document.querySelector(".music-kicker");
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.FogExp2(0x020606, 0.047);
+scene.fog = new THREE.FogExp2(0x060c14, 0.034);
 
 const renderer = new THREE.WebGLRenderer({
   canvas,
@@ -21,7 +21,7 @@ renderer.setClearColor(0x000000, 0);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.22;
+renderer.toneMappingExposure = 1.54;
 
 const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 80);
 camera.position.set(0.35, 0.15, 10.5);
@@ -90,29 +90,26 @@ window.helixDebug = {
 };
 
 const palette = [
-  new THREE.Color("#54ffe2"),
-  new THREE.Color("#a46cff"),
-  new THREE.Color("#ff5bc9"),
-  new THREE.Color("#66ff9a"),
-  new THREE.Color("#4a8cff"),
-  new THREE.Color("#ffb15d"),
+  new THREE.Color("#2F8CFF"),
+  new THREE.Color("#C9365A"),
+  new THREE.Color("#E9EDF7"),
 ];
 
 const cardMeshes = [];
 const floaters = [];
 
-const keyLight = new THREE.PointLight(0x7effd4, 38, 24);
+const keyLight = new THREE.PointLight(0x8fbfff, 54, 28);
 keyLight.position.set(2.6, 4.5, 4.6);
 scene.add(keyLight);
 
-const violetLight = new THREE.PointLight(0xbe66ff, 30, 24);
+const violetLight = new THREE.PointLight(0xc9365a, 40, 26);
 violetLight.position.set(-3.6, -1.8, 4.2);
 scene.add(violetLight);
 
-const backLight = new THREE.PointLight(0x4b8cff, 20, 28);
+const backLight = new THREE.PointLight(0x62a7ff, 30, 30);
 backLight.position.set(0, 2.4, -6);
 scene.add(backLight);
-scene.add(new THREE.AmbientLight(0x8eb8ff, 0.26));
+scene.add(new THREE.AmbientLight(0xb3d6ff, 0.42));
 
 function makePanelTexture(fileName, index, options = {}) {
   const width = options.width ?? 1024;
@@ -159,37 +156,37 @@ function drawPanel(ctx, width, height, image, index, options) {
 
   if (image) {
     ctx.save();
-    ctx.filter = "saturate(0.62) contrast(0.88) brightness(0.58)";
+    ctx.filter = "saturate(0.92) contrast(1) brightness(0.94)";
     drawImageCover(ctx, image, inset, inset, panelWidth, panelHeight);
     ctx.restore();
   } else {
     const wash = ctx.createLinearGradient(0, 0, width, height);
-    wash.addColorStop(0, "#211b1b");
-    wash.addColorStop(0.44, "#152925");
-    wash.addColorStop(1, "#0d1c1c");
+    wash.addColorStop(0, "#1a1b22");
+    wash.addColorStop(0.44, "#131a2e");
+    wash.addColorStop(1, "#0d1220");
     ctx.fillStyle = wash;
     ctx.fillRect(inset, inset, panelWidth, panelHeight);
   }
 
   ctx.globalCompositeOperation = "source-atop";
   const tint = ctx.createLinearGradient(inset, inset, width - inset, height - inset);
-  tint.addColorStop(0, "rgba(22, 16, 22, 0.5)");
-  tint.addColorStop(0.42, "rgba(53, 93, 77, 0.46)");
-  tint.addColorStop(0.72, "rgba(12, 34, 34, 0.54)");
-  tint.addColorStop(1, "rgba(127, 87, 54, 0.36)");
+  tint.addColorStop(0, "rgba(42, 34, 40, 0.26)");
+  tint.addColorStop(0.42, "rgba(47, 100, 180, 0.3)");
+  tint.addColorStop(0.72, "rgba(30, 80, 160, 0.28)");
+  tint.addColorStop(1, "rgba(151, 113, 78, 0.18)");
   ctx.fillStyle = tint;
   ctx.fillRect(inset, inset, panelWidth, panelHeight);
 
   const vignette = ctx.createRadialGradient(width * 0.56, height * 0.48, 20, width * 0.5, height * 0.5, width * 0.74);
-  vignette.addColorStop(0, "rgba(198, 255, 231, 0.08)");
-  vignette.addColorStop(0.55, "rgba(8, 22, 22, 0.12)");
-  vignette.addColorStop(1, "rgba(0, 0, 0, 0.68)");
+  vignette.addColorStop(0, "rgba(200, 220, 255, 0.14)");
+  vignette.addColorStop(0.55, "rgba(20, 40, 80, 0.05)");
+  vignette.addColorStop(1, "rgba(0, 0, 0, 0.42)");
   ctx.fillStyle = vignette;
   ctx.fillRect(inset, inset, panelWidth, panelHeight);
 
   const gloss = ctx.createLinearGradient(width * 0.1, height * 0.08, width * 0.92, height * 0.82);
   gloss.addColorStop(0, "rgba(255, 255, 255, 0)");
-  gloss.addColorStop(0.34, "rgba(228, 255, 245, 0.08)");
+  gloss.addColorStop(0.34, "rgba(210, 230, 255, 0.08)");
   gloss.addColorStop(0.5, "rgba(255, 255, 255, 0.02)");
   gloss.addColorStop(1, "rgba(255, 255, 255, 0)");
   ctx.fillStyle = gloss;
@@ -201,12 +198,12 @@ function drawPanel(ctx, width, height, image, index, options) {
 
   ctx.save();
   roundedPath(ctx, inset, inset, panelWidth, panelHeight, radius);
-  ctx.strokeStyle = "rgba(74, 91, 84, 0.82)";
+  ctx.strokeStyle = "rgba(50, 70, 100, 0.82)";
   ctx.lineWidth = 15;
   ctx.stroke();
 
   roundedPath(ctx, inset + 9, inset + 9, panelWidth - 18, panelHeight - 18, radius - 10);
-  ctx.strokeStyle = "rgba(204, 232, 219, 0.13)";
+  ctx.strokeStyle = "rgba(180, 210, 255, 0.13)";
   ctx.lineWidth = 2;
   ctx.stroke();
 
@@ -227,11 +224,11 @@ function drawCardTitle(ctx, width, height, index, fileName = "") {
   ctx.save();
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.shadowColor = "rgba(96, 255, 235, 0.78)";
+  ctx.shadowColor = "rgba(47, 140, 255, 0.78)";
   ctx.shadowBlur = 12;
   ctx.lineWidth = 4;
-  ctx.strokeStyle = "rgba(42, 82, 90, 0.82)";
-  ctx.fillStyle = "rgba(248, 249, 226, 0.94)";
+  ctx.strokeStyle = "rgba(20, 50, 100, 0.82)";
+  ctx.fillStyle = "rgba(252, 255, 238, 0.98)";
 
   ctx.font = "600 34px Georgia, 'Times New Roman', serif";
   ctx.fillText("Ahri", width / 2, height * 0.38);
@@ -388,17 +385,17 @@ function buildPanels() {
 
 function buildSpine() {
   const coreMaterial = new THREE.MeshPhysicalMaterial({
-    color: 0x171b24,
+    color: 0x2a3038,
     metalness: 0.78,
-    roughness: 0.34,
-    emissive: 0x3f164d,
-    emissiveIntensity: 0.2,
+    roughness: 0.28,
+    emissive: 0x5a1a2e,
+    emissiveIntensity: 0.42,
     clearcoat: 0.55,
     clearcoatRoughness: 0.28,
   });
 
   const rimMaterial = new THREE.MeshBasicMaterial({
-    color: 0x8cfff0,
+    color: 0x2f8cff,
     transparent: true,
     opacity: 0.2,
     depthWrite: false,
@@ -443,20 +440,20 @@ function buildSpine() {
   railGeometryA.setFromPoints(railA);
   railGeometryB.setFromPoints(railB);
   spineRoot.add(new THREE.Line(railGeometryA, new THREE.LineBasicMaterial({
-    color: 0x59ffe0,
+    color: 0x2f8cff,
     transparent: true,
-    opacity: 0.32,
+    opacity: 0.46,
   })));
   spineRoot.add(new THREE.Line(railGeometryB, new THREE.LineBasicMaterial({
-    color: 0xff63ca,
+    color: 0xc9365a,
     transparent: true,
-    opacity: 0.2,
+    opacity: 0.32,
   })));
 
   const chainMaterial = new THREE.MeshBasicMaterial({
     color: 0x207dff,
     transparent: true,
-    opacity: 0.34,
+    opacity: 0.52,
   });
   const linkGeometry = new THREE.TorusGeometry(0.11, 0.018, 8, 22);
   for (let i = 0; i < 56; i += 1) {
@@ -677,7 +674,7 @@ function animate() {
     mesh.rotation.x = rotation.x + pointerY * 0.04;
     mesh.rotation.z = rotation.z * (0.55 + focusWeight * 0.45);
     mesh.scale.setScalar(0.84 + focusWeight * 0.24);
-    mesh.material.opacity = 0.26 + focusWeight * 0.56;
+    mesh.material.opacity = 0.42 + focusWeight * 0.54;
     mesh.renderOrder = getCardRenderOrder(base, galleryRoot.rotation.y);
   });
 
@@ -819,6 +816,7 @@ window.addEventListener("load", initMusic, { once: true });
 window.addEventListener("resize", resize);
 window.addEventListener("scroll", updateScrollState, { passive: true });
 document.addEventListener("scroll", updateScrollState, { passive: true });
+window.setInterval(updateScrollState, 120);
 window.addEventListener("pointermove", handlePointerMove, { passive: false });
 canvas.addEventListener("pointerdown", handlePointerDown);
 canvas.addEventListener("pointerup", handlePointerUp);

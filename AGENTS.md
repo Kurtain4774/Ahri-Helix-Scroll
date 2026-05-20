@@ -88,9 +88,10 @@ materials.
 ## Music Notes
 
 The audio element is defined in `index.html` and controlled from `script.js`.
-Browsers may block autoplay. The app retries after the first pointer or key
-interaction and marks the panel with `needs-interaction` when playback is
-blocked.
+Music must remain paused until the user clicks the music panel Play button.
+Do not add autoplay or first-gesture retry behavior outside that control.
+If playback is blocked after the Play button is clicked, the panel is marked
+with `needs-interaction`.
 
 ## Styling Guidelines
 

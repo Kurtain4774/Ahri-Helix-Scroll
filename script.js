@@ -79,9 +79,12 @@ const CARD_ANGLE_OFFSET = 0.35;
 const CARD_ASPECT_RATIO = 340 / 201;
 const CARD_HEIGHT = 1.84;
 const CARD_WIDTH = CARD_HEIGHT * CARD_ASPECT_RATIO;
-const CARD_RADIUS = 2.38;
+const CARD_RADIUS = 3.2;
 const HELIX_HEIGHT = 18.4;
 const HELIX_TURNS = ((CARD_COUNT - 1) * CARD_ANGLE_STEP) / (Math.PI * 2);
+const PARTICLE_HELIX_RADIUS = 24;
+const PARTICLE_HELIX_HEIGHT = HELIX_HEIGHT * 1.42;
+const PARTICLE_HELIX_TURNS = HELIX_TURNS * 1.34;
 
 window.helixDebug = {
   cardCount: CARD_COUNT,
@@ -507,52 +510,23 @@ function addParticleSet(name, count, createPoint, size, opacity) {
 
 function buildParticles() {
   addParticleSet(
-    "column",
-    window.innerWidth < 700 ? 4200 : 7600,
-    () => {
-      const column = Math.random() < 0.54 ? -0.72 : 0.72;
-      const radius = Math.pow(Math.random(), 1.9) * 1.48;
-      const angle = Math.random() * Math.PI * 2;
-      return {
-        x: column + Math.cos(angle) * radius * 0.82,
-        y: THREE.MathUtils.randFloatSpread(7.4),
-        z: -0.28 + Math.sin(angle) * radius * 0.62 + THREE.MathUtils.randFloatSpread(0.8),
-      };
-    },
-    0.033,
-    0.78,
-  );
-
-  addParticleSet(
-    "ribbonA",
-    window.innerWidth < 700 ? 1800 : 3200,
+    "outerHelix",
+    window.innerWidth < 700 ? 6200 : 11800,
     (i, count) => {
       const t = i / Math.max(1, count - 1);
-      const x = THREE.MathUtils.lerp(-7.8, 7.8, t);
-      return {
-        x: x + THREE.MathUtils.randFloatSpread(0.34),
-        y: Math.sin(t * Math.PI * 3.1 + 0.4) * 0.48 + 0.9 + THREE.MathUtils.randFloatSpread(0.26),
-        z: -1.42 + Math.cos(t * Math.PI * 2.2) * 0.9 + THREE.MathUtils.randFloatSpread(0.32),
-      };
-    },
-    0.024,
-    0.56,
-  );
+      const turnOffset = (i % 17) / 17;
+      const angle = t * Math.PI * 2 * PARTICLE_HELIX_TURNS + turnOffset * 0.34;
+      const radius = PARTICLE_HELIX_RADIUS + THREE.MathUtils.randFloatSpread(1.4);
+      const y = THREE.MathUtils.lerp(PARTICLE_HELIX_HEIGHT / 2, -PARTICLE_HELIX_HEIGHT / 2, t);
 
-  addParticleSet(
-    "ribbonB",
-    window.innerWidth < 700 ? 1700 : 3000,
-    (i, count) => {
-      const t = i / Math.max(1, count - 1);
-      const x = THREE.MathUtils.lerp(-7.6, 7.6, t);
       return {
-        x: x + THREE.MathUtils.randFloatSpread(0.28),
-        y: Math.sin(t * Math.PI * 2.4 + 2.2) * 0.36 - 2.28 + THREE.MathUtils.randFloatSpread(0.2),
-        z: -0.82 + Math.sin(t * Math.PI * 4.4) * 0.5 + THREE.MathUtils.randFloatSpread(0.28),
+        x: Math.cos(angle) * radius + THREE.MathUtils.randFloatSpread(0.34),
+        y: y + THREE.MathUtils.randFloatSpread(0.62),
+        z: Math.sin(angle) * radius + THREE.MathUtils.randFloatSpread(0.34),
       };
     },
-    0.022,
-    0.48,
+    0.03,
+    0.72,
   );
 }
 
@@ -614,19 +588,19 @@ function resize() {
   camera.aspect = width / height;
 
   if (width < 560) {
-    camera.position.z = 12.9;
+    camera.position.z = 15.5;
     root.scale.setScalar(0.76);
     root.position.x = 0.3;
     galleryRoot.scale.setScalar(0.82);
     responsiveYOffset = 0.18;
   } else if (width < 980) {
-    camera.position.z = 12;
+    camera.position.z = 14.5;
     root.scale.setScalar(0.88);
     root.position.x = 0.14;
     galleryRoot.scale.setScalar(0.9);
     responsiveYOffset = 0.08;
   } else {
-    camera.position.z = 10.5;
+    camera.position.z = 13.0;
     root.scale.setScalar(1);
     root.position.x = 0;
     galleryRoot.scale.setScalar(1);
@@ -661,16 +635,15 @@ function animate() {
   camera.lookAt(0, 0, 0);
 
   panelRoot.children.forEach((mesh) => {
-    const { base, rotation, float, phase, parallax, index } = mesh.userData;
+    const { base, rotation, float, phase, parallax, index, angle } = mesh.userData;
     const focusIndex = getInteractionFocusIndex();
     const distance = Math.abs(index - focusIndex);
     const focusWeight = THREE.MathUtils.clamp(1 - distance / 2.15, 0, 1);
-    const flatRotation = -galleryRoot.rotation.y - root.rotation.y;
 
     mesh.position.x = base.x + pointerX * parallax + Math.sin(motionTime * 0.42 + phase) * float;
     mesh.position.y = base.y + Math.cos(motionTime * 0.38 + phase) * float;
     mesh.position.z = base.z + Math.sin(motionTime * 0.32 + phase) * float * 0.7;
-    mesh.rotation.y = flatRotation + pointerX * 0.018;
+    mesh.rotation.y = Math.PI / 2 - angle + pointerX * 0.018;
     mesh.rotation.x = rotation.x + pointerY * 0.04;
     mesh.rotation.z = rotation.z * (0.55 + focusWeight * 0.45);
     mesh.scale.setScalar(0.84 + focusWeight * 0.24);
@@ -802,17 +775,12 @@ function pauseMusic() {
   updateMusicButton(false);
 }
 
-function initMusic() {
-  startMusic();
-}
-
 buildPanels();
 buildSpine();
 buildParticles();
 resize();
 requestAnimationFrame(animate);
 
-window.addEventListener("load", initMusic, { once: true });
 window.addEventListener("resize", resize);
 window.addEventListener("scroll", updateScrollState, { passive: true });
 document.addEventListener("scroll", updateScrollState, { passive: true });
@@ -829,30 +797,6 @@ musicToggle?.addEventListener("click", () => {
     startMusic();
   }
 });
-
-window.addEventListener(
-  "pointerdown",
-  (event) => {
-    if (event.target instanceof Element && event.target.closest(".music-panel")) {
-      return;
-    }
-
-    if (!musicRequested && musicAudio?.paused) {
-      startMusic();
-    }
-  },
-  { once: true, passive: true },
-);
-
-window.addEventListener(
-  "keydown",
-  () => {
-    if (!musicRequested && musicAudio?.paused) {
-      startMusic();
-    }
-  },
-  { once: true },
-);
 
 musicAudio?.addEventListener("play", () => {
   musicRequested = true;

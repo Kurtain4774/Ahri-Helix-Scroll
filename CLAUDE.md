@@ -49,7 +49,7 @@ Pointer events on the canvas translate drag distance into `window.scrollTo` call
 
 ### Music
 
-Autoplay is attempted on `window load`. Browser autoplay policies often block it, so the panel shows `needs-interaction` state and retries on the first user gesture (any `pointerdown` outside the music panel, or any `keydown`).
+Music remains paused until the user clicks the music panel Play button. If browser playback policy blocks that explicit Play click, the panel shows the `needs-interaction` state.
 
 ## Key Constants (script.js)
 

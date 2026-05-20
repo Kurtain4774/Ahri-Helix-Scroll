@@ -1,4 +1,7 @@
 import * as THREE from "three";
+import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
 
 const canvas = document.querySelector("#helix-canvas");
 const caption = document.querySelector(".scene-caption");
@@ -6,9 +9,12 @@ const musicPanel = document.querySelector(".music-panel");
 const musicAudio = document.querySelector("#legends-player");
 const musicToggle = document.querySelector(".music-toggle");
 const musicKicker = document.querySelector(".music-kicker");
+const cardDotsContainer = document.querySelector("#card-dots");
+const scrollHint = document.querySelector("#scroll-hint");
+const skinListEl = document.querySelector("#skin-list");
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.FogExp2(0x060c14, 0.034);
+scene.fog = new THREE.FogExp2(0x120820, 0.034);
 
 const renderer = new THREE.WebGLRenderer({
   canvas,
@@ -21,7 +27,10 @@ renderer.setClearColor(0x000000, 0);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.2;
+renderer.toneMappingExposure = 1.18;
+
+const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 80);
+camera.position.set(0.35, 0.15, 10.5);
 
 {
   const envCanvas = document.createElement("canvas");
@@ -29,10 +38,11 @@ renderer.toneMappingExposure = 1.2;
   envCanvas.height = 128;
   const envCtx = envCanvas.getContext("2d");
   const envGrad = envCtx.createLinearGradient(0, 0, 0, 128);
-  envGrad.addColorStop(0, "#0a1428");
-  envGrad.addColorStop(0.35, "#2f8cff");
-  envGrad.addColorStop(0.6, "#c9365a");
-  envGrad.addColorStop(1, "#050810");
+  envGrad.addColorStop(0, "#0d0614");
+  envGrad.addColorStop(0.28, "#a855c8");
+  envGrad.addColorStop(0.56, "#e8547a");
+  envGrad.addColorStop(0.8, "#f5c842");
+  envGrad.addColorStop(1, "#0d0614");
   envCtx.fillStyle = envGrad;
   envCtx.fillRect(0, 0, 256, 128);
   const envTexture = new THREE.CanvasTexture(envCanvas);
@@ -45,8 +55,15 @@ renderer.toneMappingExposure = 1.2;
   pmrem.dispose();
 }
 
-const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 80);
-camera.position.set(0.35, 0.15, 10.5);
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloomPass = new UnrealBloomPass(
+  new THREE.Vector2(window.innerWidth, window.innerHeight),
+  0.72,
+  0.42,
+  0.58,
+);
+composer.addPass(bloomPass);
 
 const root = new THREE.Group();
 const galleryRoot = new THREE.Group();
@@ -75,6 +92,8 @@ let responsiveYOffset = 0;
 let isDragging = false;
 let lastScrollTop = -1;
 let musicRequested = false;
+let firstRenderDone = false;
+let scrollHintHidden = false;
 
 const imageFiles = [
   "340px-Ahri_OriginalSkin.jpg",
@@ -115,17 +134,17 @@ window.helixDebug = {
 };
 
 const palette = [
-  new THREE.Color("#2F8CFF"),
-  new THREE.Color("#C9365A"),
-  new THREE.Color("#E9EDF7"),
+  new THREE.Color("#e8547a"),
+  new THREE.Color("#f5c842"),
+  new THREE.Color("#a855c8"),
 ];
 
 const particleRingColors = [
-  new THREE.Color("#2F8CFF"),
-  new THREE.Color("#FF3C7D"),
-  new THREE.Color("#FFD25A"),
-  new THREE.Color("#7DF7FF"),
-  new THREE.Color("#E9EDF7"),
+  new THREE.Color("#e8547a"),
+  new THREE.Color("#f5c842"),
+  new THREE.Color("#a855c8"),
+  new THREE.Color("#ff6eb4"),
+  new THREE.Color("#f7f8ff"),
 ];
 
 const cardMeshes = [];
@@ -135,19 +154,19 @@ let hoverGlowLight = null;
 const raycaster = new THREE.Raycaster();
 const pointerVec = new THREE.Vector2();
 
-const keyLight = new THREE.DirectionalLight(0xffffff, 2.0);
+const keyLight = new THREE.DirectionalLight(0xfff0f6, 2.0);
 keyLight.position.set(5, 6, 4);
 scene.add(keyLight);
 
-const fillLight = new THREE.DirectionalLight(0x9fb8ff, 0.5);
+const fillLight = new THREE.DirectionalLight(0xc8a0ff, 0.52);
 fillLight.position.set(-4, -2, 3);
 scene.add(fillLight);
 
-const innerGlow = new THREE.PointLight(0xffffff, 0.6, 8);
+const innerGlow = new THREE.PointLight(0xe8547a, 0.5, 8);
 innerGlow.position.set(0, 0, 0);
 scene.add(innerGlow);
 
-scene.add(new THREE.AmbientLight(0xb3d6ff, 0.15));
+scene.add(new THREE.AmbientLight(0xd4a0ff, 0.14));
 
 function makePanelTexture(fileName, index, options = {}) {
   const width = options.width ?? 1024;
@@ -180,11 +199,8 @@ function drawPanel(ctx, width, height, image, index, options) {
   ctx.clearRect(0, 0, width, height);
 
   ctx.save();
-  ctx.shadowColor = "rgba(200, 220, 255, 0.22)";
-  ctx.shadowBlur = 28;
-  ctx.shadowOffsetY = 8;
   roundedPath(ctx, inset, inset, panelWidth, panelHeight, radius);
-  ctx.fillStyle = "rgba(8, 15, 35, 0.90)";
+  ctx.fillStyle = "rgba(13, 6, 20, 0.92)";
   ctx.fill();
   ctx.restore();
 
@@ -194,95 +210,73 @@ function drawPanel(ctx, width, height, image, index, options) {
 
   if (image) {
     ctx.save();
-    ctx.globalAlpha = 0.95;
-    ctx.filter = "saturate(0.92) contrast(1) brightness(0.94)";
+    ctx.globalAlpha = 0.96;
+    ctx.filter = "saturate(0.95) contrast(1.02) brightness(0.9)";
     drawImageCover(ctx, image, inset, inset, panelWidth, panelHeight);
     ctx.restore();
   } else {
     ctx.save();
-    ctx.globalAlpha = 1.0;
     const wash = ctx.createLinearGradient(0, 0, width, height);
-    wash.addColorStop(0, "#1a1b22");
-    wash.addColorStop(0.44, "#131a2e");
-    wash.addColorStop(1, "#0d1220");
+    wash.addColorStop(0, "#1a0d28");
+    wash.addColorStop(0.44, "#1a1030");
+    wash.addColorStop(1, "#0d0620");
     ctx.fillStyle = wash;
     ctx.fillRect(inset, inset, panelWidth, panelHeight);
     ctx.restore();
   }
 
   ctx.globalCompositeOperation = "source-atop";
-  const tint = ctx.createLinearGradient(
-    inset,
-    inset,
-    width - inset,
-    height - inset,
-  );
-  tint.addColorStop(0, "rgba(42, 34, 40, 0.26)");
-  tint.addColorStop(0.42, "rgba(47, 100, 180, 0.3)");
-  tint.addColorStop(0.72, "rgba(30, 80, 160, 0.28)");
-  tint.addColorStop(1, "rgba(151, 113, 78, 0.18)");
+  const tint = ctx.createLinearGradient(inset, inset, width - inset, height - inset);
+  tint.addColorStop(0, "rgba(40, 18, 50, 0.22)");
+  tint.addColorStop(0.42, "rgba(80, 30, 100, 0.24)");
+  tint.addColorStop(0.72, "rgba(140, 30, 70, 0.22)");
+  tint.addColorStop(1, "rgba(100, 20, 50, 0.18)");
   ctx.fillStyle = tint;
   ctx.fillRect(inset, inset, panelWidth, panelHeight);
 
   const vignette = ctx.createRadialGradient(
-    width * 0.56,
-    height * 0.48,
-    20,
-    width * 0.5,
-    height * 0.5,
-    width * 0.74,
+    width * 0.5, height * 0.5, 20,
+    width * 0.5, height * 0.5, width * 0.72,
   );
-  vignette.addColorStop(0, "rgba(200, 220, 255, 0.14)");
-  vignette.addColorStop(0.55, "rgba(20, 40, 80, 0.05)");
-  vignette.addColorStop(1, "rgba(0, 0, 0, 0.42)");
+  vignette.addColorStop(0, "rgba(220, 200, 255, 0.1)");
+  vignette.addColorStop(0.5, "rgba(15, 8, 28, 0.04)");
+  vignette.addColorStop(1, "rgba(0, 0, 0, 0.5)");
   ctx.fillStyle = vignette;
   ctx.fillRect(inset, inset, panelWidth, panelHeight);
 
-  const gloss = ctx.createLinearGradient(
-    width * 0.1,
-    height * 0.08,
-    width * 0.92,
-    height * 0.82,
-  );
-  gloss.addColorStop(0, "rgba(255, 255, 255, 0.12)");
-  gloss.addColorStop(0.34, "rgba(220, 240, 255, 0.22)");
-  gloss.addColorStop(0.5, "rgba(255, 255, 255, 0.06)");
+  const gloss = ctx.createLinearGradient(width * 0.1, height * 0.08, width * 0.92, height * 0.82);
+  gloss.addColorStop(0, "rgba(255, 240, 255, 0.1)");
+  gloss.addColorStop(0.34, "rgba(220, 190, 255, 0.18)");
+  gloss.addColorStop(0.5, "rgba(255, 255, 255, 0.04)");
   gloss.addColorStop(1, "rgba(255, 255, 255, 0)");
   ctx.fillStyle = gloss;
   ctx.fillRect(inset, inset, panelWidth, panelHeight);
 
+  const stripH = panelHeight * 0.32;
+  const strip = ctx.createLinearGradient(0, inset + panelHeight - stripH, 0, inset + panelHeight);
+  strip.addColorStop(0, "rgba(13, 6, 20, 0)");
+  strip.addColorStop(0.48, "rgba(13, 6, 20, 0.74)");
+  strip.addColorStop(1, "rgba(13, 6, 20, 0.92)");
+  ctx.fillStyle = strip;
+  ctx.fillRect(inset, inset + panelHeight - stripH, panelWidth, stripH);
+
+  ctx.globalCompositeOperation = "source-over";
   drawCardGrain(ctx, inset, inset, panelWidth, panelHeight, index);
   drawCardTitle(ctx, width, height, index, options.fileName);
   ctx.restore();
 
   ctx.save();
+  const isEven = index % 2 === 0;
   roundedPath(ctx, inset, inset, panelWidth, panelHeight, radius);
-  ctx.strokeStyle = "rgba(190, 215, 255, 0.55)";
-  ctx.lineWidth = 15;
+  ctx.strokeStyle = isEven
+    ? "rgba(232, 84, 122, 0.68)"
+    : "rgba(168, 85, 200, 0.62)";
+  ctx.lineWidth = 6;
   ctx.stroke();
 
-  roundedPath(
-    ctx,
-    inset + 9,
-    inset + 9,
-    panelWidth - 18,
-    panelHeight - 18,
-    radius - 10,
-  );
-  ctx.strokeStyle = "rgba(255, 255, 255, 0.28)";
-  ctx.lineWidth = 2;
-  ctx.stroke();
-
-  roundedPath(
-    ctx,
-    inset - 4,
-    inset - 4,
-    panelWidth + 8,
-    panelHeight + 8,
-    radius + 4,
-  );
-  ctx.strokeStyle = "rgba(3, 8, 8, 0.64)";
-  ctx.lineWidth = 4;
+  roundedPath(ctx, inset - 4, inset - 4, panelWidth + 8, panelHeight + 8, radius + 4);
+  ctx.strokeStyle = "rgba(13, 6, 20, 0.72)";
+  ctx.lineWidth = 5;
   ctx.stroke();
   ctx.restore();
 }
@@ -290,28 +284,46 @@ function drawPanel(ctx, width, height, image, index, options) {
 function drawCardTitle(ctx, width, height, index, fileName = "") {
   const title = getCardTitle(fileName, index);
   const lines = splitTitleLines(title);
-  const mainSize = lines.length > 1 ? 64 : 76;
-  const lineHeight = mainSize * 0.98;
-  const startY = height * 0.53 - ((lines.length - 1) * lineHeight) / 2;
+  const mainSize = lines.length > 1 ? 54 : 66;
+  const lineHeight = mainSize * 1.02;
+
+  const inset = 34;
+  const panelHeight = height - inset * 2;
+  const stripBottom = inset + panelHeight - 22;
+  const textBlock = lines.length * lineHeight;
+  const startY = stripBottom - textBlock - 10;
 
   ctx.save();
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.shadowColor = "rgba(47, 140, 255, 0.78)";
-  ctx.shadowBlur = 12;
-  ctx.lineWidth = 4;
-  ctx.strokeStyle = "rgba(20, 50, 100, 0.82)";
-  ctx.fillStyle = "rgba(252, 255, 238, 0.98)";
-
-  ctx.font = "600 34px Georgia, 'Times New Roman', serif";
-  ctx.fillText("Ahri", width / 2, height * 0.38);
 
   ctx.font = `500 ${mainSize}px Consolas, 'Liberation Mono', monospace`;
+  ctx.shadowColor = "rgba(232, 84, 122, 0.82)";
+  ctx.shadowBlur = 14;
+  ctx.strokeStyle = "rgba(13, 6, 20, 0.9)";
+  ctx.lineWidth = 5;
+  ctx.fillStyle = "rgba(247, 248, 255, 0.96)";
+
   lines.forEach((line, lineIndex) => {
     const y = startY + lineIndex * lineHeight;
     ctx.strokeText(line, width / 2, y);
     ctx.fillText(line, width / 2, y);
   });
+
+  ctx.font = "500 24px Consolas, 'Liberation Mono', monospace";
+  ctx.shadowColor = "rgba(168, 85, 200, 0.9)";
+  ctx.shadowBlur = 10;
+  ctx.fillStyle = "rgba(168, 85, 200, 0.9)";
+  ctx.fillText("AHRI", width / 2, startY - 34);
+
+  const indexLabel =
+    String(index + 1).padStart(2, "0") + " / " + String(CARD_COUNT).padStart(2, "0");
+  ctx.font = "400 19px Consolas, 'Liberation Mono', monospace";
+  ctx.shadowColor = "transparent";
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = "rgba(245, 200, 66, 0.52)";
+  ctx.textAlign = "right";
+  ctx.fillText(indexLabel, width - inset - 18, inset + 26);
 
   ctx.restore();
 }
@@ -350,17 +362,23 @@ function splitTitleLines(title) {
 }
 
 function drawCardGrain(ctx, x, y, width, height, seed) {
+  const roseR = 232, roseG = 84, roseB = 122;
+  const violetR = 168, violetG = 85, violetB = 200;
   let value = (seed + 1) * 9301 + 49297;
   ctx.save();
-  ctx.globalAlpha = 0.16;
+  ctx.globalAlpha = 0.14;
   for (let i = 0; i < 950; i += 1) {
     value = (value * 233 + 17) % 9973;
     const px = x + (value / 9973) * width;
     value = (value * 233 + 17) % 9973;
     const py = y + (value / 9973) * height;
     value = (value * 233 + 17) % 9973;
-    const shade = 160 + Math.floor((value / 9973) * 95);
-    ctx.fillStyle = `rgb(${shade}, ${shade}, ${shade})`;
+    const t = value / 9973;
+    const shade = 140 + Math.floor(t * 115);
+    const r = Math.round(shade * 0.72 + roseR * 0.28);
+    const g = Math.round(shade * 0.72 + roseG * 0.28);
+    const b = Math.round(shade * 0.72 + (i % 3 === 0 ? violetB : roseB) * 0.28);
+    ctx.fillStyle = `rgb(${r},${g},${b})`;
     ctx.fillRect(px, py, 1, 1);
   }
   ctx.restore();
@@ -382,17 +400,7 @@ function drawImageCover(ctx, image, x, y, width, height) {
     sourceY = (image.naturalHeight - sourceHeight) / 2;
   }
 
-  ctx.drawImage(
-    image,
-    sourceX,
-    sourceY,
-    sourceWidth,
-    sourceHeight,
-    x,
-    y,
-    width,
-    height,
-  );
+  ctx.drawImage(image, sourceX, sourceY, sourceWidth, sourceHeight, x, y, width, height);
 }
 
 function roundedPath(ctx, x, y, width, height, radius) {
@@ -417,10 +425,10 @@ function getGlowTexture() {
   c.width = w; c.height = h;
   const ctx = c.getContext("2d");
   ctx.clearRect(0, 0, w, h);
-  ctx.strokeStyle = "rgba(255, 255, 255, 0.95)";
+  ctx.strokeStyle = "rgba(232, 84, 122, 0.9)";
   ctx.lineWidth = 3;
   for (let i = 0; i < 4; i++) {
-    ctx.shadowColor = "#ffffff";
+    ctx.shadowColor = "#e8547a";
     ctx.shadowBlur = 8 + i * 14;
     roundedPath(ctx, 18, 18, w - 36, h - 36, 24);
     ctx.stroke();
@@ -496,9 +504,7 @@ function buildPanels() {
     makeGlassPanel(fileName, index, {
       width: CARD_WIDTH,
       height: CARD_HEIGHT,
-      x,
-      y,
-      z,
+      x, y, z,
       angle,
       rz: Math.sin(index * 0.72) * 0.035,
       opacity: 0.72,
@@ -510,20 +516,20 @@ function buildPanels() {
 
 function buildSpine() {
   const coreMaterial = new THREE.MeshPhysicalMaterial({
-    color: 0xffffff,
+    color: 0xfff0f8,
     metalness: 0.3,
     roughness: 0.05,
     clearcoat: 1.0,
     clearcoatRoughness: 0.05,
-    iridescence: 0.8,
+    iridescence: 0.9,
     iridescenceIOR: 1.5,
-    envMapIntensity: 1.5,
+    envMapIntensity: 1.8,
   });
 
   const rimMaterial = new THREE.MeshBasicMaterial({
-    color: 0x2f8cff,
+    color: 0xa855c8,
     transparent: true,
-    opacity: 0.2,
+    opacity: 0.22,
     depthWrite: false,
   });
 
@@ -533,11 +539,7 @@ function buildSpine() {
   const vertebraCount = 23;
   for (let i = 0; i < vertebraCount; i += 1) {
     const progress = i / Math.max(1, vertebraCount - 1);
-    const y = THREE.MathUtils.lerp(
-      HELIX_HEIGHT / 2,
-      -HELIX_HEIGHT / 2,
-      progress,
-    );
+    const y = THREE.MathUtils.lerp(HELIX_HEIGHT / 2, -HELIX_HEIGHT / 2, progress);
     const vertebra = new THREE.Mesh(vertebraGeometry, coreMaterial);
     vertebra.position.set(0.08 * Math.sin(i * 0.9), y, -0.18);
     vertebra.rotation.set(i * 0.22, i * 0.56, Math.PI * 0.48 + i * 0.18);
@@ -555,58 +557,78 @@ function buildSpine() {
     }
   }
 
-  const railGeometryA = new THREE.BufferGeometry();
-  const railGeometryB = new THREE.BufferGeometry();
   const railA = [];
   const railB = [];
   const railRadius = 0.74;
   for (let i = 0; i <= 640; i += 1) {
     const progress = i / 640;
     const angle = progress * Math.PI * 2 * HELIX_TURNS;
-    const y = THREE.MathUtils.lerp(
-      HELIX_HEIGHT / 2,
-      -HELIX_HEIGHT / 2,
-      progress,
-    );
-    railA.push(
-      new THREE.Vector3(
-        Math.cos(angle) * railRadius,
-        y,
-        Math.sin(angle) * railRadius,
-      ),
-    );
-    railB.push(
-      new THREE.Vector3(
-        Math.cos(angle + Math.PI) * railRadius,
-        y,
-        Math.sin(angle + Math.PI) * railRadius,
-      ),
-    );
+    const y = THREE.MathUtils.lerp(HELIX_HEIGHT / 2, -HELIX_HEIGHT / 2, progress);
+    railA.push(new THREE.Vector3(Math.cos(angle) * railRadius, y, Math.sin(angle) * railRadius));
+    railB.push(new THREE.Vector3(Math.cos(angle + Math.PI) * railRadius, y, Math.sin(angle + Math.PI) * railRadius));
   }
-  railGeometryA.setFromPoints(railA);
-  railGeometryB.setFromPoints(railB);
+
+  const curveA = new THREE.CatmullRomCurve3(railA);
+  const curveB = new THREE.CatmullRomCurve3(railB);
+  const tubeGeomA = new THREE.TubeGeometry(curveA, 200, 0.022, 6, false);
+  const tubeGeomB = new THREE.TubeGeometry(curveB, 200, 0.022, 6, false);
+
   spineRoot.add(
-    new THREE.Line(
-      railGeometryA,
-      new THREE.LineBasicMaterial({
-        color: 0x2f8cff,
+    new THREE.Mesh(
+      tubeGeomA,
+      new THREE.MeshBasicMaterial({
+        color: 0xe8547a,
         transparent: true,
-        opacity: 0.46,
+        opacity: 0.54,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
       }),
     ),
   );
   spineRoot.add(
-    new THREE.Line(
-      railGeometryB,
-      new THREE.LineBasicMaterial({
-        color: 0xc9365a,
+    new THREE.Mesh(
+      tubeGeomB,
+      new THREE.MeshBasicMaterial({
+        color: 0xa855c8,
         transparent: true,
-        opacity: 0.32,
+        opacity: 0.44,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
       }),
     ),
   );
 
-  hoverGlowLight = new THREE.PointLight(0xffffff, 0, 5);
+  const colGeom = new THREE.CylinderGeometry(0.035, 0.035, HELIX_HEIGHT, 8, 1, true);
+  spineRoot.add(
+    new THREE.Mesh(
+      colGeom,
+      new THREE.MeshBasicMaterial({
+        color: 0xe8547a,
+        transparent: true,
+        opacity: 0.16,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      }),
+    ),
+  );
+
+  const outerColGeom = new THREE.CylinderGeometry(0.14, 0.14, HELIX_HEIGHT, 8, 1, true);
+  spineRoot.add(
+    new THREE.Mesh(
+      outerColGeom,
+      new THREE.MeshBasicMaterial({
+        color: 0xa855c8,
+        transparent: true,
+        opacity: 0.07,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      }),
+    ),
+  );
+
+  hoverGlowLight = new THREE.PointLight(0xe8547a, 0, 5);
   hoverGlowLight.position.set(0, 0, -0.8);
   galleryRoot.add(hoverGlowLight);
 }
@@ -663,8 +685,7 @@ function buildParticles() {
       const t = i / Math.max(1, count - 1);
       const turnOffset = (i % 17) / 17;
       const angle = t * Math.PI * 2 * PARTICLE_HELIX_TURNS + turnOffset * 0.34;
-      const radius =
-        PARTICLE_HELIX_RADIUS + THREE.MathUtils.randFloatSpread(1.4);
+      const radius = PARTICLE_HELIX_RADIUS + THREE.MathUtils.randFloatSpread(1.4);
       const y = THREE.MathUtils.lerp(
         PARTICLE_HELIX_HEIGHT / 2,
         -PARTICLE_HELIX_HEIGHT / 2,
@@ -672,7 +693,6 @@ function buildParticles() {
       );
       const ringIndex =
         Math.floor(t * PARTICLE_HELIX_TURNS) % particleRingColors.length;
-
       return {
         x: Math.cos(angle) * radius + THREE.MathUtils.randFloatSpread(0.34),
         y: y + THREE.MathUtils.randFloatSpread(0.62),
@@ -683,6 +703,67 @@ function buildParticles() {
     0.12,
     0.95,
   );
+
+  addParticleSet(
+    "innerDust",
+    window.innerWidth < 700 ? 160 : 320,
+    () => {
+      const angle = Math.random() * Math.PI * 2;
+      const radius = 1.2 + Math.random() * 2.6;
+      const y = THREE.MathUtils.lerp(
+        HELIX_HEIGHT / 2,
+        -HELIX_HEIGHT / 2,
+        Math.random(),
+      );
+      return {
+        x: Math.cos(angle) * radius + THREE.MathUtils.randFloatSpread(0.4),
+        y,
+        z: Math.sin(angle) * radius + THREE.MathUtils.randFloatSpread(0.4),
+        color: palette[Math.floor(Math.random() * palette.length)],
+      };
+    },
+    0.07,
+    0.52,
+  );
+}
+
+function buildDots() {
+  if (!cardDotsContainer) return;
+  for (let i = 0; i < CARD_COUNT; i++) {
+    const dot = document.createElement("div");
+    dot.className = "card-dot";
+    cardDotsContainer.appendChild(dot);
+  }
+}
+
+function updateDots() {
+  if (!cardDotsContainer) return;
+  cardDotsContainer.querySelectorAll(".card-dot").forEach((dot, i) => {
+    dot.classList.toggle("active", i === activeCardIndex);
+  });
+}
+
+function buildSkinList() {
+  if (!skinListEl) return;
+  const showCount = Math.min(7, imageFiles.length);
+  imageFiles.slice(0, showCount).forEach((fileName, i) => {
+    const raw = getCardTitle(fileName, i);
+    const displayName = raw
+      .split(" ")
+      .map((w) => w.charAt(0) + w.slice(1).toLowerCase())
+      .join(" ");
+    const li = document.createElement("li");
+    const a = document.createElement("a");
+    a.href = "#";
+    a.textContent = displayName;
+    a.addEventListener("click", (e) => {
+      e.preventDefault();
+      const scrollMax = getScrollMax();
+      window.scrollTo({ top: (i / (CARD_COUNT - 1)) * scrollMax, behavior: "smooth" });
+    });
+    li.appendChild(a);
+    skinListEl.appendChild(li);
+  });
 }
 
 function getCardFocusRotation(index) {
@@ -714,8 +795,7 @@ function getCardRenderOrder(base, rotationY) {
 }
 
 function updateScrollState() {
-  const scrollingElement =
-    document.scrollingElement || document.documentElement;
+  const scrollingElement = document.scrollingElement || document.documentElement;
   const scrollTop = scrollingElement.scrollTop;
   if (scrollTop === lastScrollTop) return;
 
@@ -728,11 +808,15 @@ function updateScrollState() {
   activeCardIndex = Math.round(scrollProgress * (CARD_COUNT - 1));
   scrollRotation = getCardFocusRotation(activeCardIndex);
   updateFocusedCardTarget();
+  updateDots();
   window.helixDebug.activeCardIndex = activeCardIndex;
   window.helixDebug.scrollProgress = scrollProgress;
-  document.documentElement.dataset.activeCard = String(
-    activeCardIndex + 1,
-  ).padStart(2, "0");
+  document.documentElement.dataset.activeCard = String(activeCardIndex + 1).padStart(2, "0");
+
+  if (!scrollHintHidden && scrollProgress > 0.015 && scrollHint) {
+    scrollHintHidden = true;
+    scrollHint.classList.add("hidden");
+  }
 
   if (caption) {
     caption.style.setProperty(
@@ -746,6 +830,8 @@ function resize() {
   const width = window.innerWidth;
   const height = window.innerHeight;
   renderer.setSize(width, height, false);
+  composer.setSize(width, height);
+  bloomPass.setSize(width, height);
   camera.aspect = width / height;
 
   if (width < 560) {
@@ -795,29 +881,16 @@ function animate() {
     0.08,
   );
   updateFocusedCardTarget();
-  currentGalleryY = THREE.MathUtils.lerp(
-    currentGalleryY,
-    targetGalleryY,
-    0.075,
-  );
+  currentGalleryY = THREE.MathUtils.lerp(currentGalleryY, targetGalleryY, 0.075);
   galleryRoot.position.y = currentGalleryY;
   particleRoot.rotation.y = galleryRoot.rotation.y;
   particleRoot.position.y = galleryRoot.position.y;
-  camera.position.x = THREE.MathUtils.lerp(
-    camera.position.x,
-    0.35 + pointerX * 0.24,
-    0.05,
-  );
-  camera.position.y = THREE.MathUtils.lerp(
-    camera.position.y,
-    0.15 + pointerY * 0.16,
-    0.05,
-  );
+  camera.position.x = THREE.MathUtils.lerp(camera.position.x, 0.35 + pointerX * 0.24, 0.05);
+  camera.position.y = THREE.MathUtils.lerp(camera.position.y, 0.15 + pointerY * 0.16, 0.05);
   camera.lookAt(0, 0, 0);
 
   panelRoot.children.forEach((mesh) => {
-    const { base, rotation, float, phase, parallax, index, angle } =
-      mesh.userData;
+    const { base, rotation, float, phase, parallax, index, angle } = mesh.userData;
     const focusIndex = getInteractionFocusIndex();
     const distance = Math.abs(index - focusIndex);
     const focusWeight = THREE.MathUtils.clamp(1 - distance / 2.15, 0, 1);
@@ -856,8 +929,7 @@ function animate() {
 
   floaters.forEach((mesh) => {
     mesh.rotation.y += animationPaused ? 0 : 0.0025;
-    mesh.position.x +=
-      Math.sin(motionTime * 0.8 + mesh.userData.phase) * 0.0008;
+    mesh.position.x += Math.sin(motionTime * 0.8 + mesh.userData.phase) * 0.0008;
   });
 
   if (hoverGlowLight) {
@@ -873,7 +945,13 @@ function animate() {
     );
   }
 
-  renderer.render(scene, camera);
+  composer.render();
+
+  if (!firstRenderDone) {
+    firstRenderDone = true;
+    canvas.classList.add("ready");
+  }
+
   requestAnimationFrame(animate);
 }
 
@@ -887,10 +965,7 @@ function getScrollTop() {
 
 function getScrollMax() {
   const scrollingElement = getScrollingElement();
-  return Math.max(
-    scrollingElement.scrollHeight - scrollingElement.clientHeight,
-    0,
-  );
+  return Math.max(scrollingElement.scrollHeight - scrollingElement.clientHeight, 0);
 }
 
 function scrollPageFromDrag(event) {
@@ -917,10 +992,7 @@ function scrollPageFromDrag(event) {
     getScrollMax(),
   );
 
-  window.scrollTo({
-    top: nextScrollTop,
-    behavior: "auto",
-  });
+  window.scrollTo({ top: nextScrollTop, behavior: "auto" });
 }
 
 function handlePointerMove(event) {
@@ -960,7 +1032,7 @@ function handlePointerUp(event) {
 function updateMusicButton(isPlaying) {
   if (!musicToggle) return;
 
-  musicToggle.textContent = isPlaying ? "Pause" : "Play";
+  musicToggle.textContent = isPlaying ? "❚❚" : "▶";
   musicToggle.setAttribute("aria-pressed", String(isPlaying));
   musicToggle.setAttribute(
     "aria-label",
@@ -1004,6 +1076,8 @@ function pauseMusic() {
 buildPanels();
 buildSpine();
 buildParticles();
+buildDots();
+buildSkinList();
 resize();
 requestAnimationFrame(animate);
 

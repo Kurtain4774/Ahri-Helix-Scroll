@@ -7,8 +7,8 @@
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='14' fill='%23190d2e'/><path d='M16 4 Q20 10 16 16 Q12 10 16 4Z' fill='%23d4a0e0'/><path d='M16 16 Q22 14 26 18 Q22 22 16 16Z' fill='%23d4a0e0'/><path d='M16 16 Q10 14 6 18 Q10 22 16 16Z' fill='%23d4a0e0'/><path d='M16 16 Q20 22 18 28 Q14 26 16 16Z' fill='%23d4a0e0'/><path d='M16 16 Q12 22 14 28 Q10 26 16 16Z' fill='%23d4a0e0'/></svg>" />
     <script>
       try {
-        const savedTheme = localStorage.getItem("helix-theme");
-        if (savedTheme) document.documentElement.dataset.theme = savedTheme;
+        const savedTheme = localStorage.getItem("helix-theme") || "helix";
+        document.documentElement.dataset.theme = savedTheme;
       } catch {
         // Theme persistence is optional.
       }
@@ -16,7 +16,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="./styles.css?v=fox-spirit-16" />
+    <link rel="stylesheet" href="./styles.css?v=fox-spirit-20" />
     <script type="importmap">
       {
         "imports": {
@@ -35,10 +35,12 @@
       <form class="theme-panel" id="theme-panel" aria-label="Theme selector">
         <label class="theme-label" for="theme-select">Theme</label>
         <select class="theme-select" id="theme-select" name="theme">
-          <option value="spirit">Fox Spirit</option>
+          <option value="helix">Helix</option>
+          <option value="spirit">Spirit Blossom</option>
           <option value="arcade">Arcade</option>
           <option value="coven">Coven</option>
           <option value="elderwood">Elderwood</option>
+          <option value="kda">K/DA</option>
         </select>
         <button class="theme-apply" type="submit">Apply</button>
       </form>
@@ -88,6 +90,6 @@
       </section>
     </main>
 
-    <script type="module" src="./script.js?v=fox-spirit-14"></script>
+    <script type="module" src="./script.js?v=fox-spirit-18"></script>
   </body>
 </html>

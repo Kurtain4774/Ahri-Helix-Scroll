@@ -17,7 +17,10 @@ attribute float aTumbleSpeed;
 uniform float uTime;
 uniform float uFieldHeight;
 uniform float uFieldBottom;
+uniform float uNearFadeStart;
+uniform float uNearFadeEnd;
 varying vec3 vTintColor;
+varying float vNearFade;
 
 mat3 rotMatAxisAngle(vec3 axis, float angle) {
   float c = cos(angle);
@@ -47,11 +50,11 @@ const skinListEl = document.querySelector("#skin-list");
 const themeForm = document.querySelector("#theme-panel");
 const themeSelect = document.querySelector("#theme-select");
 const THEME_STORAGE_KEY = "helix-theme";
-const VALID_THEMES = new Set(["spirit", "arcade", "coven", "elderwood"]);
+const VALID_THEMES = new Set(["helix", "spirit", "arcade", "coven", "elderwood", "kda"]);
 
 function getActiveTheme() {
-  const theme = document.documentElement.dataset.theme || "spirit";
-  return VALID_THEMES.has(theme) ? theme : "spirit";
+  const theme = document.documentElement.dataset.theme || "helix";
+  return VALID_THEMES.has(theme) ? theme : "helix";
 }
 
 function initThemeControl() {
@@ -86,6 +89,16 @@ function readThemeColors() {
 }
 
 const themeColors = readThemeColors();
+
+function withAlpha(cssHex, alpha) {
+  const c = new THREE.Color(cssHex);
+  return `rgba(${Math.round(c.r * 255)}, ${Math.round(c.g * 255)}, ${Math.round(c.b * 255)}, ${alpha})`;
+}
+
+function paperMix(otherHex, t) {
+  const c = new THREE.Color(themeColors.paper).lerp(new THREE.Color(otherHex), t);
+  return `rgb(${Math.round(c.r * 255)}, ${Math.round(c.g * 255)}, ${Math.round(c.b * 255)})`;
+}
 
 const scene = new THREE.Scene();
 scene.fog = new THREE.FogExp2(themeColors.paper, 0.034);
@@ -361,7 +374,7 @@ function drawPanel(ctx, width, height, image, index, options) {
 
   ctx.save();
   roundedPath(ctx, inset, inset, panelWidth, panelHeight, radius);
-  ctx.fillStyle = "rgba(13, 6, 20, 0.92)";
+  ctx.fillStyle = withAlpha(themeColors.paper, 0.92);
   ctx.fill();
   ctx.restore();
 
@@ -378,9 +391,9 @@ function drawPanel(ctx, width, height, image, index, options) {
   } else {
     ctx.save();
     const wash = ctx.createLinearGradient(0, 0, width, height);
-    wash.addColorStop(0, "#1a0d28");
-    wash.addColorStop(0.44, "#1a1030");
-    wash.addColorStop(1, "#0d0620");
+    wash.addColorStop(0, paperMix(themeColors.violet, 0.18));
+    wash.addColorStop(0.44, paperMix(themeColors.violet, 0.12));
+    wash.addColorStop(1, paperMix(themeColors.rose, 0.08));
     ctx.fillStyle = wash;
     ctx.fillRect(inset, inset, panelWidth, panelHeight);
     ctx.restore();
@@ -388,10 +401,10 @@ function drawPanel(ctx, width, height, image, index, options) {
 
   ctx.globalCompositeOperation = "source-atop";
   const tint = ctx.createLinearGradient(inset, inset, width - inset, height - inset);
-  tint.addColorStop(0, "rgba(40, 18, 50, 0.22)");
-  tint.addColorStop(0.42, "rgba(80, 30, 100, 0.24)");
-  tint.addColorStop(0.72, "rgba(140, 30, 70, 0.22)");
-  tint.addColorStop(1, "rgba(100, 20, 50, 0.18)");
+  tint.addColorStop(0, withAlpha(themeColors.violet, 0.22));
+  tint.addColorStop(0.42, withAlpha(themeColors.violet, 0.24));
+  tint.addColorStop(0.72, withAlpha(themeColors.rose, 0.22));
+  tint.addColorStop(1, withAlpha(themeColors.rose, 0.18));
   ctx.fillStyle = tint;
   ctx.fillRect(inset, inset, panelWidth, panelHeight);
 
@@ -399,15 +412,16 @@ function drawPanel(ctx, width, height, image, index, options) {
     width * 0.5, height * 0.5, 20,
     width * 0.5, height * 0.5, width * 0.72,
   );
-  vignette.addColorStop(0, "rgba(220, 200, 255, 0.1)");
-  vignette.addColorStop(0.5, "rgba(15, 8, 28, 0.04)");
+  vignette.addColorStop(0, withAlpha(themeColors.violet, 0.12));
+  vignette.addColorStop(0.5, withAlpha(themeColors.paper, 0.04));
   vignette.addColorStop(1, "rgba(0, 0, 0, 0.5)");
   ctx.fillStyle = vignette;
   ctx.fillRect(inset, inset, panelWidth, panelHeight);
 
+  const glossC = new THREE.Color(themeColors.violet).lerp(new THREE.Color("#ffffff"), 0.5);
   const gloss = ctx.createLinearGradient(width * 0.1, height * 0.08, width * 0.92, height * 0.82);
-  gloss.addColorStop(0, "rgba(255, 240, 255, 0.1)");
-  gloss.addColorStop(0.34, "rgba(220, 190, 255, 0.18)");
+  gloss.addColorStop(0, withAlpha(themeColors.violet, 0.08));
+  gloss.addColorStop(0.34, `rgba(${Math.round(glossC.r * 255)}, ${Math.round(glossC.g * 255)}, ${Math.round(glossC.b * 255)}, 0.16)`);
   gloss.addColorStop(0.5, "rgba(255, 255, 255, 0.04)");
   gloss.addColorStop(1, "rgba(255, 255, 255, 0)");
   ctx.fillStyle = gloss;
@@ -415,9 +429,9 @@ function drawPanel(ctx, width, height, image, index, options) {
 
   const stripH = panelHeight * 0.32;
   const strip = ctx.createLinearGradient(0, inset + panelHeight - stripH, 0, inset + panelHeight);
-  strip.addColorStop(0, "rgba(13, 6, 20, 0)");
-  strip.addColorStop(0.48, "rgba(13, 6, 20, 0.82)");
-  strip.addColorStop(1, "rgba(13, 6, 20, 0.96)");
+  strip.addColorStop(0, withAlpha(themeColors.paper, 0));
+  strip.addColorStop(0.48, withAlpha(themeColors.paper, 0.82));
+  strip.addColorStop(1, withAlpha(themeColors.paper, 0.96));
   ctx.fillStyle = strip;
   ctx.fillRect(inset, inset + panelHeight - stripH, panelWidth, stripH);
 
@@ -430,13 +444,13 @@ function drawPanel(ctx, width, height, image, index, options) {
   const isEven = index % 2 === 0;
   roundedPath(ctx, inset, inset, panelWidth, panelHeight, radius);
   ctx.strokeStyle = isEven
-    ? "rgba(232, 84, 122, 0.68)"
-    : "rgba(168, 85, 200, 0.62)";
+    ? withAlpha(themeColors.rose, 0.68)
+    : withAlpha(themeColors.violet, 0.62);
   ctx.lineWidth = 6;
   ctx.stroke();
 
   roundedPath(ctx, inset - 4, inset - 4, panelWidth + 8, panelHeight + 8, radius + 4);
-  ctx.strokeStyle = "rgba(13, 6, 20, 0.72)";
+  ctx.strokeStyle = withAlpha(themeColors.paper, 0.72);
   ctx.lineWidth = 5;
   ctx.stroke();
   ctx.restore();
@@ -466,7 +480,7 @@ function drawCardTitle(ctx, width, height, index, fileName = "") {
   ctx.font = `500 ${mainSize}px Consolas, 'Liberation Mono', monospace`;
   ctx.shadowColor = themeColors.rose;
   ctx.shadowBlur = 16;
-  ctx.strokeStyle = "rgba(5, 2, 10, 0.98)";
+  ctx.strokeStyle = withAlpha(themeColors.paper, 0.98);
   ctx.lineWidth = 6;
   ctx.fillStyle = "rgba(255, 255, 255, 1)";
 
@@ -611,12 +625,12 @@ function getGlowTexture() {
   c.width = w; c.height = h;
   const ctx = c.getContext("2d");
   ctx.clearRect(0, 0, w, h);
-  ctx.strokeStyle = "rgba(232, 84, 122, 0.9)";
+  ctx.strokeStyle = withAlpha(themeColors.rose, 0.9);
   ctx.lineWidth = 3;
   for (let i = 0; i < 4; i++) {
-    ctx.shadowColor = "#e8547a";
+    ctx.shadowColor = themeColors.rose;
     ctx.shadowBlur = 8 + i * 14;
-    roundedPath(ctx, 18, 18, w - 36, h - 36, 24);
+    roundedPath(ctx, 18, 18, w - 36, h - 36, 36);
     ctx.stroke();
   }
   sharedGlowTexture = new THREE.CanvasTexture(c);
@@ -773,7 +787,7 @@ function buildSpine() {
   });
 
   const rimMaterial = new THREE.MeshBasicMaterial({
-    color: 0xa855c8,
+    color: new THREE.Color(themeColors.violet),
     transparent: true,
     opacity: 0.22,
     depthWrite: false,
@@ -832,7 +846,7 @@ function buildSpine() {
     new THREE.Mesh(
       tubeGeomA,
       new THREE.MeshBasicMaterial({
-        color: 0xe8547a,
+        color: new THREE.Color(themeColors.rose),
         transparent: true,
         opacity: 0.54,
         blending: THREE.AdditiveBlending,
@@ -844,7 +858,7 @@ function buildSpine() {
     new THREE.Mesh(
       tubeGeomB,
       new THREE.MeshBasicMaterial({
-        color: 0xa855c8,
+        color: new THREE.Color(themeColors.violet),
         transparent: true,
         opacity: 0.44,
         blending: THREE.AdditiveBlending,
@@ -858,7 +872,7 @@ function buildSpine() {
     new THREE.Mesh(
       colGeom,
       new THREE.MeshBasicMaterial({
-        color: 0xe8547a,
+        color: new THREE.Color(themeColors.rose),
         transparent: true,
         opacity: 0.16,
         blending: THREE.AdditiveBlending,
@@ -873,7 +887,7 @@ function buildSpine() {
     new THREE.Mesh(
       outerColGeom,
       new THREE.MeshBasicMaterial({
-        color: 0xa855c8,
+        color: new THREE.Color(themeColors.violet),
         transparent: true,
         opacity: 0.07,
         blending: THREE.AdditiveBlending,
@@ -883,7 +897,7 @@ function buildSpine() {
     ),
   );
 
-  hoverGlowLight = new THREE.PointLight(0xe8547a, 0, 5);
+  hoverGlowLight = new THREE.PointLight(new THREE.Color(themeColors.rose), 0, 5);
   hoverGlowLight.position.set(0, 0, -0.8);
   galleryRoot.add(hoverGlowLight);
 }
@@ -912,6 +926,8 @@ function buildPetalShaderPatch(material, opacity) {
     uFieldHeight: { value: PETAL_FIELD_HEIGHT },
     uFieldBottom: { value: PETAL_FIELD_BOTTOM },
     uOpacity: { value: opacity },
+    uNearFadeStart: { value: 2.5 },
+    uNearFadeEnd: { value: 5.5 },
   };
   material.userData.uniforms = uniforms;
 
@@ -920,6 +936,8 @@ function buildPetalShaderPatch(material, opacity) {
     shader.uniforms.uFieldHeight = uniforms.uFieldHeight;
     shader.uniforms.uFieldBottom = uniforms.uFieldBottom;
     shader.uniforms.uOpacity = uniforms.uOpacity;
+    shader.uniforms.uNearFadeStart = uniforms.uNearFadeStart;
+    shader.uniforms.uNearFadeEnd = uniforms.uNearFadeEnd;
 
     shader.vertexShader = shader.vertexShader
       .replace(
@@ -954,6 +972,8 @@ function buildPetalShaderPatch(material, opacity) {
         petalAnchor.x += sin(uTime * 0.4 + aPhase) * aSwayAmp;
         petalAnchor.z += cos(uTime * 0.32 + aPhase * 1.3) * aSwayAmp * 0.7;
         transformed += petalAnchor;
+        vec4 petalViewPos = modelViewMatrix * vec4(transformed, 1.0);
+        vNearFade = smoothstep(uNearFadeStart, uNearFadeEnd, -petalViewPos.z);
         `,
       );
 
@@ -963,6 +983,7 @@ function buildPetalShaderPatch(material, opacity) {
         `
         #include <common>
         varying vec3 vTintColor;
+        varying float vNearFade;
         uniform float uOpacity;
         `,
       )
@@ -971,7 +992,8 @@ function buildPetalShaderPatch(material, opacity) {
         `
         #include <color_fragment>
         diffuseColor.rgb *= vTintColor;
-        diffuseColor.a *= uOpacity;
+        diffuseColor.a *= uOpacity * vNearFade;
+        if (diffuseColor.a < 0.01) discard;
         `,
       );
 
@@ -1060,7 +1082,7 @@ function addPetalVariant(geometry, sourceMaterial, count, opacity, baseScale, op
   baseMaterial.depthWrite = false;
   if (baseMaterial.alphaTest === 0) baseMaterial.alphaTest = 0.01;
   if (!baseMaterial.emissive || baseMaterial.emissive.getHex() === 0x000000) {
-    baseMaterial.emissive = new THREE.Color(0x4a1530);
+    baseMaterial.emissive = new THREE.Color(themeColors.rose).multiplyScalar(0.28);
     baseMaterial.emissiveIntensity = 0.35;
   }
   const material = baseMaterial;

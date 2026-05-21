@@ -150,61 +150,110 @@ select {
   right: clamp(18px, 4vw, 60px);
   z-index: 8;
   display: grid;
-  grid-template-columns: auto auto;
-  gap: 0.48rem;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.5rem;
   align-items: center;
-  width: min(238px, calc(100vw - 36px));
-  padding: 0.62rem 0.68rem;
-  border: 1px solid var(--theme-panel-border);
+  width: min(304px, calc(100vw - 36px));
+  min-height: 76px;
+  padding: 0.72rem;
+  border: 1px solid color-mix(in srgb, var(--rose) 34%, transparent);
   border-radius: 8px;
-  background: var(--theme-panel-bg);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--violet) 12%, transparent), transparent 46%),
+    var(--theme-panel-bg);
   box-shadow:
-    0 0 24px color-mix(in srgb, var(--rose) 14%, transparent),
-    inset 0 0 18px color-mix(in srgb, var(--violet) 10%, transparent);
+    0 0 22px color-mix(in srgb, var(--rose) 10%, transparent),
+    inset 0 0 22px color-mix(in srgb, var(--violet) 8%, transparent);
   backdrop-filter: blur(16px);
   text-transform: uppercase;
-  transition: background 0.2s, border-color 0.2s, box-shadow 0.2s;
+  transition: background 0.22s, border-color 0.22s, box-shadow 0.22s, transform 0.22s;
 }
 
 .theme-panel:hover,
 .theme-panel:focus-within {
-  border-color: color-mix(in srgb, var(--gold) 54%, transparent);
-  background: var(--theme-panel-bg-strong);
+  border-color: color-mix(in srgb, var(--gold) 58%, transparent);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--gold) 10%, transparent), transparent 48%),
+    var(--theme-panel-bg-strong);
   box-shadow:
-    0 0 28px color-mix(in srgb, var(--gold) 12%, transparent),
-    inset 0 0 22px color-mix(in srgb, var(--rose) 10%, transparent);
+    0 0 30px color-mix(in srgb, var(--gold) 14%, transparent),
+    0 0 44px color-mix(in srgb, var(--rose) 8%, transparent),
+    inset 0 0 24px color-mix(in srgb, var(--rose) 10%, transparent);
+  transform: translateY(-1px);
 }
 
 .theme-label {
   grid-column: 1 / -1;
-  color: rgba(255, 255, 255, 0.9);
-  font-size: 0.58rem;
-  letter-spacing: 0.16em;
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 0.6rem;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  text-shadow: 0 0 12px color-mix(in srgb, var(--violet) 32%, transparent);
 }
 
 .theme-select,
 .theme-apply {
-  min-height: 32px;
-  border: 1px solid color-mix(in srgb, var(--rose) 36%, transparent);
+  min-height: 34px;
+  border: 1px solid color-mix(in srgb, var(--rose) 42%, transparent);
   border-radius: 999px;
   color: rgba(255, 255, 255, 0.96);
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.055);
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.04em;
+  transition: background 0.2s, border-color 0.2s, box-shadow 0.2s, color 0.2s;
 }
 
 .theme-select {
   min-width: 0;
   width: 100%;
-  padding: 0 1.8rem 0 0.72rem;
+  padding: 0 2rem 0 0.82rem;
+  appearance: none;
+  background:
+    linear-gradient(45deg, transparent 48%, var(--gold) 50%, transparent 52%) right 0.95rem center / 7px 7px no-repeat,
+    linear-gradient(135deg, transparent 48%, var(--gold) 50%, transparent 52%) right 0.68rem center / 7px 7px no-repeat,
+    rgba(255, 255, 255, 0.055);
   color-scheme: dark;
+  cursor: pointer;
+}
+
+.theme-select option {
+  background: var(--paper);
+  color: #ffffff;
+  letter-spacing: 0;
+}
+
+.theme-select option:checked {
+  background: var(--gold);
+  color: #09040b;
+}
+
+.theme-select:hover,
+.theme-select:focus-visible {
+  border-color: color-mix(in srgb, var(--gold) 62%, transparent);
+  background-color: color-mix(in srgb, var(--gold) 8%, rgba(255, 255, 255, 0.055));
+  box-shadow: inset 0 0 14px color-mix(in srgb, var(--gold) 8%, transparent);
 }
 
 .theme-apply {
-  padding: 0 0.72rem;
+  min-width: 76px;
+  padding: 0 0.78rem;
   cursor: pointer;
   color: var(--gold);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--gold) 10%, transparent), transparent),
+    rgba(80, 12, 30, 0.2);
   box-shadow: inset 0 0 12px color-mix(in srgb, var(--gold) 8%, transparent);
+}
+
+.theme-apply:hover {
+  border-color: color-mix(in srgb, var(--gold) 72%, transparent);
+  color: rgba(255, 255, 255, 0.98);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--gold) 18%, transparent), transparent),
+    color-mix(in srgb, var(--rose) 18%, rgba(80, 12, 30, 0.22));
+  box-shadow:
+    inset 0 0 14px color-mix(in srgb, var(--gold) 12%, transparent),
+    0 0 14px color-mix(in srgb, var(--gold) 16%, transparent);
 }
 
 .theme-select:focus-visible,

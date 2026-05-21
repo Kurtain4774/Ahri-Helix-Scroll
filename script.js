@@ -3,8 +3,9 @@ import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 
-const PARTICLE_VERT = /* glsl */`
+const PETAL_INSTANCE_ATTRIBUTES_GLSL = /* glsl */`
 attribute vec3 aBasePos;
 attribute vec3 aColor;
 attribute float aPhase;
@@ -13,15 +14,10 @@ attribute float aFallSpeed;
 attribute float aSwayAmp;
 attribute vec3 aTumbleAxis;
 attribute float aTumbleSpeed;
-attribute float aVariant;
 uniform float uTime;
-uniform float uOpacity;
 uniform float uFieldHeight;
 uniform float uFieldBottom;
-uniform float uVariantCount;
-varying vec2 vUv;
-varying vec3 vColor;
-varying float vAlpha;
+varying vec3 vTintColor;
 
 mat3 rotMatAxisAngle(vec3 axis, float angle) {
   float c = cos(angle);
@@ -35,40 +31,6 @@ mat3 rotMatAxisAngle(vec3 axis, float angle) {
     t*x*y - s*z,  t*y*y + c,    t*y*z + s*x,
     t*x*z + s*y,  t*y*z - s*x,  t*z*z + c
   );
-}
-
-void main() {
-  vec3 anchor = aBasePos;
-  anchor.y -= uTime * aFallSpeed;
-  anchor.y = mod(anchor.y - uFieldBottom, uFieldHeight) + uFieldBottom;
-  anchor.x += sin(uTime * 0.4 + aPhase) * aSwayAmp;
-  anchor.z += cos(uTime * 0.32 + aPhase * 1.3) * aSwayAmp * 0.7;
-
-  float angle = uTime * aTumbleSpeed + aPhase;
-  mat3 R = rotMatAxisAngle(normalize(aTumbleAxis), angle);
-  vec3 local = R * (position * aSize);
-
-  float tile = 1.0 / max(uVariantCount, 1.0);
-  vUv = vec2(uv.x * tile + aVariant * tile, uv.y);
-
-  vColor = aColor;
-  float pulse = mix(0.82, 1.0, 0.5 + 0.5 * sin(uTime * 0.6 + aPhase));
-  vAlpha = uOpacity * pulse;
-
-  gl_Position = projectionMatrix * modelViewMatrix * vec4(anchor + local, 1.0);
-}
-`;
-
-const PARTICLE_FRAG = /* glsl */`
-uniform sampler2D uPetal;
-varying vec2 vUv;
-varying vec3 vColor;
-varying float vAlpha;
-
-void main() {
-  vec4 tex = texture2D(uPetal, vUv);
-  if (tex.a < 0.02) discard;
-  gl_FragColor = vec4(vColor * tex.rgb, tex.a * vAlpha);
 }
 `;
 
@@ -204,9 +166,6 @@ let currentGalleryY = 0;
 let responsiveYOffset = 0;
 let isDragging = false;
 let lastScrollTop = -1;
-let lastScrollDirection = 1;
-let scrollSnapTimer = 0;
-let suppressScrollSnapUntil = 0;
 let musicRequested = false;
 let firstRenderDone = false;
 let scrollHintHidden = false;
@@ -215,9 +174,6 @@ let skinListExpanded = false;
 let renderedSkinListKey = "";
 const FRAME_BUDGET_MS = 1000 / 60;
 const CLICK_MOVE_TOLERANCE = 8;
-const SCROLL_SNAP_IDLE_MS = 160;
-const SCROLL_SNAP_SUPPRESS_MS = 780;
-const SNAP_INDEX_EPSILON = 0.002;
 let lastFrameTime = 0;
 const DEFAULT_MUSIC_VOLUME = 0.5;
 let musicVolumeLevel = DEFAULT_MUSIC_VOLUME;
@@ -668,115 +624,61 @@ function getGlowTexture() {
   return sharedGlowTexture;
 }
 
-const PETAL_TILE_SIZE = 256;
 const PETAL_VARIANT_FILES = [
-  "./assets/petals/petal-1.png",
-  "./assets/petals/petal-2.png",
-  "./assets/petals/petal-3.png",
-  "./assets/petals/petal-4.png",
+  "./assets/petals/petal_1.glb",
+  "./assets/petals/petal_2.glb",
+  "./assets/petals/petal_3.glb",
+  "./assets/petals/petal_4.glb",
 ];
 
-function drawProceduralPetal(ctx, size) {
-  ctx.save();
-  ctx.translate(size / 2, size / 2);
-
-  const grad = ctx.createRadialGradient(0, -size * 0.18, size * 0.04, 0, 0, size * 0.5);
-  grad.addColorStop(0, "rgba(255, 232, 240, 0.96)");
-  grad.addColorStop(0.35, "rgba(255, 168, 196, 0.9)");
-  grad.addColorStop(0.7, "rgba(232, 96, 140, 0.62)");
-  grad.addColorStop(1, "rgba(180, 40, 90, 0)");
-  ctx.fillStyle = grad;
-
-  ctx.beginPath();
-  ctx.moveTo(0, -size * 0.42);
-  ctx.bezierCurveTo(size * 0.34, -size * 0.22, size * 0.32, size * 0.28, 0, size * 0.42);
-  ctx.bezierCurveTo(-size * 0.32, size * 0.28, -size * 0.34, -size * 0.22, 0, -size * 0.42);
-  ctx.closePath();
-  ctx.fill();
-
-  ctx.strokeStyle = "rgba(200, 60, 110, 0.22)";
-  ctx.lineWidth = 1.4 * (size / 128);
-  ctx.beginPath();
-  ctx.moveTo(0, -size * 0.36);
-  ctx.lineTo(0, size * 0.36);
-  ctx.stroke();
-
-  ctx.restore();
-}
-
-function drawTileWithGlow(ctx, tileX, image, tileSize) {
-  if (image) {
-    ctx.save();
-    ctx.shadowColor = "rgba(255, 140, 180, 0.85)";
-    ctx.shadowBlur = tileSize * 0.22;
-    ctx.drawImage(image, tileX, 0, tileSize, tileSize);
-    ctx.drawImage(image, tileX, 0, tileSize, tileSize);
-    ctx.restore();
-    ctx.drawImage(image, tileX, 0, tileSize, tileSize);
-  } else {
-    ctx.save();
-    ctx.translate(tileX, 0);
-    drawProceduralPetal(ctx, tileSize);
-    ctx.restore();
-  }
-}
-
-function loadImageOrNull(src) {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = () => resolve(null);
-    img.src = src;
-  });
-}
-
-let sharedPetalAtlas = null;
-function getPetalAtlas() {
-  if (sharedPetalAtlas) return sharedPetalAtlas;
-
-  const tile = PETAL_TILE_SIZE;
-  const cols = PETAL_VARIANT_FILES.length;
-  const canvas = document.createElement("canvas");
-  canvas.width = tile * cols;
-  canvas.height = tile;
-  const ctx = canvas.getContext("2d");
-
-  // Initial placeholder: procedural petal in each slot so first render works
-  for (let i = 0; i < cols; i += 1) {
-    drawTileWithGlow(ctx, i * tile, null, tile);
-  }
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.premultiplyAlpha = false;
-  texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
-
-  const atlas = {
-    texture,
-    variantCount: cols,
-    onReady: null,
-  };
-  sharedPetalAtlas = atlas;
-
-  // Kick off async PNG loads; recompose when settled
-  Promise.all(PETAL_VARIANT_FILES.map(loadImageOrNull)).then((images) => {
-    const loaded = images.filter((img) => img !== null);
-    const usableCount = Math.max(1, loaded.length);
-    const cellSize = tile;
-    canvas.width = cellSize * usableCount;
-    canvas.height = cellSize;
-
-    for (let i = 0; i < usableCount; i += 1) {
-      const img = loaded[i % loaded.length] ?? null;
-      drawTileWithGlow(ctx, i * cellSize, img, cellSize);
+function extractFirstMeshGeometry(gltf) {
+  let geometry = null;
+  let material = null;
+  gltf.scene.traverse((node) => {
+    if (geometry === null && node.isMesh) {
+      geometry = node.geometry;
+      material = node.material;
     }
-
-    atlas.variantCount = usableCount;
-    texture.needsUpdate = true;
-    if (typeof atlas.onReady === "function") atlas.onReady(usableCount);
   });
+  return geometry ? { geometry, material } : null;
+}
 
-  return atlas;
+function normalizePetalGeometry(geometry) {
+  geometry.computeBoundingBox();
+  const bb = geometry.boundingBox;
+  const sizeVec = new THREE.Vector3();
+  bb.getSize(sizeVec);
+  const longestAxis = Math.max(sizeVec.x, sizeVec.y, sizeVec.z) || 1;
+  const center = new THREE.Vector3();
+  bb.getCenter(center);
+  const normalized = geometry.clone();
+  normalized.translate(-center.x, -center.y, -center.z);
+  normalized.scale(1 / longestAxis, 1 / longestAxis, 1 / longestAxis);
+  if (!normalized.attributes.normal) normalized.computeVertexNormals();
+  return normalized;
+}
+
+async function loadPetalGltfs() {
+  const loader = new GLTFLoader();
+  const results = await Promise.all(
+    PETAL_VARIANT_FILES.map((path) =>
+      loader.loadAsync(path).catch((err) => {
+        console.warn(`Petal load failed: ${path}`, err);
+        return null;
+      }),
+    ),
+  );
+  const variants = [];
+  results.forEach((gltf) => {
+    if (!gltf) return;
+    const extracted = extractFirstMeshGeometry(gltf);
+    if (!extracted) return;
+    variants.push({
+      geometry: normalizePetalGeometry(extracted.geometry),
+      sourceMaterial: extracted.material,
+    });
+  });
+  return variants;
 }
 
 function makeGlassPanel(fileName, index, config) {
@@ -986,33 +888,34 @@ function buildSpine() {
   galleryRoot.add(hoverGlowLight);
 }
 
-function particleSizeScale(size) {
-  const h = renderer.getSize(new THREE.Vector2()).height * renderer.getPixelRatio();
-  const projY = 1.0 / Math.tan((camera.fov * Math.PI) / 360);
-  return size * projY * h * 0.5;
-}
-
 const PETAL_FIELD_BOTTOM = -10;
 const PETAL_FIELD_TOP = 14;
 const PETAL_FIELD_HEIGHT = PETAL_FIELD_TOP - PETAL_FIELD_BOTTOM;
 
-function addParticleSet(name, count, createPoint, size, opacity, options = {}) {
-  const sizeMin = options.sizeMin ?? 1.0;
-  const sizeMax = options.sizeMax ?? 1.0;
+const PETAL_BASE_GEOMETRY = new THREE.PlaneGeometry(1, 1);
+
+function addParticleSet(name, count, createPoint, baseScale, opacity, options = {}) {
+  const sizeMin = options.sizeMin ?? 0.5;
+  const sizeMax = options.sizeMax ?? 1.8;
   const fallMin = options.fallMin ?? 0.35;
   const fallMax = options.fallMax ?? 0.9;
-  const rotMax = options.rotMax ?? 0.7;
+  const tumbleMin = options.tumbleMin ?? 0.3;
+  const tumbleMax = options.tumbleMax ?? 1.4;
   const swayMin = options.swayMin ?? 0.15;
   const swayMax = options.swayMax ?? 0.55;
-  const petalTexture = options.petalTexture ?? getPetalTexture();
+  const atlas = options.atlas ?? getPetalAtlas();
 
   const basePos = new Float32Array(count * 3);
   const colors = new Float32Array(count * 3);
   const phases = new Float32Array(count);
   const sizes = new Float32Array(count);
   const fallSpeeds = new Float32Array(count);
-  const rotSpeeds = new Float32Array(count);
   const swayAmps = new Float32Array(count);
+  const tumbleAxes = new Float32Array(count * 3);
+  const tumbleSpeeds = new Float32Array(count);
+  const variants = new Float32Array(count);
+
+  const axisVec = new THREE.Vector3();
 
   for (let i = 0; i < count; i += 1) {
     const point = createPoint(i, count);
@@ -1029,49 +932,73 @@ function addParticleSet(name, count, createPoint, size, opacity, options = {}) {
     colors[i * 3 + 1] = color.g;
     colors[i * 3 + 2] = color.b;
     phases[i] = Math.random() * Math.PI * 2;
-    sizes[i] = THREE.MathUtils.lerp(sizeMin, sizeMax, Math.random());
+    sizes[i] = baseScale * THREE.MathUtils.lerp(sizeMin, sizeMax, Math.random());
     fallSpeeds[i] = THREE.MathUtils.lerp(fallMin, fallMax, Math.random());
-    rotSpeeds[i] = (Math.random() * 2 - 1) * rotMax;
     swayAmps[i] = THREE.MathUtils.lerp(swayMin, swayMax, Math.random());
+
+    axisVec
+      .set(
+        Math.random() * 2 - 1,
+        Math.random() * 2 - 1,
+        Math.random() * 2 - 1,
+      )
+      .normalize();
+    tumbleAxes[i * 3] = axisVec.x;
+    tumbleAxes[i * 3 + 1] = axisVec.y;
+    tumbleAxes[i * 3 + 2] = axisVec.z;
+    tumbleSpeeds[i] =
+      (Math.random() < 0.5 ? -1 : 1) *
+      THREE.MathUtils.lerp(tumbleMin, tumbleMax, Math.random());
+    variants[i] = Math.floor(Math.random() * PETAL_VARIANT_FILES.length);
   }
 
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.BufferAttribute(basePos.slice(), 3));
-  geometry.setAttribute("aBasePos", new THREE.BufferAttribute(basePos, 3));
-  geometry.setAttribute("aColor", new THREE.BufferAttribute(colors, 3));
-  geometry.setAttribute("aPhase", new THREE.BufferAttribute(phases, 1));
-  geometry.setAttribute("aSize", new THREE.BufferAttribute(sizes, 1));
-  geometry.setAttribute("aFallSpeed", new THREE.BufferAttribute(fallSpeeds, 1));
-  geometry.setAttribute("aRotSpeed", new THREE.BufferAttribute(rotSpeeds, 1));
-  geometry.setAttribute("aSwayAmp", new THREE.BufferAttribute(swayAmps, 1));
+  const geometry = new THREE.InstancedBufferGeometry();
+  geometry.index = PETAL_BASE_GEOMETRY.index;
+  geometry.attributes.position = PETAL_BASE_GEOMETRY.attributes.position;
+  geometry.attributes.uv = PETAL_BASE_GEOMETRY.attributes.uv;
+  geometry.instanceCount = count;
+  geometry.setAttribute("aBasePos", new THREE.InstancedBufferAttribute(basePos, 3));
+  geometry.setAttribute("aColor", new THREE.InstancedBufferAttribute(colors, 3));
+  geometry.setAttribute("aPhase", new THREE.InstancedBufferAttribute(phases, 1));
+  geometry.setAttribute("aSize", new THREE.InstancedBufferAttribute(sizes, 1));
+  geometry.setAttribute("aFallSpeed", new THREE.InstancedBufferAttribute(fallSpeeds, 1));
+  geometry.setAttribute("aSwayAmp", new THREE.InstancedBufferAttribute(swayAmps, 1));
+  geometry.setAttribute("aTumbleAxis", new THREE.InstancedBufferAttribute(tumbleAxes, 3));
+  geometry.setAttribute("aTumbleSpeed", new THREE.InstancedBufferAttribute(tumbleSpeeds, 1));
+  geometry.setAttribute("aVariant", new THREE.InstancedBufferAttribute(variants, 1));
 
   const material = new THREE.ShaderMaterial({
     vertexShader: PARTICLE_VERT,
     fragmentShader: PARTICLE_FRAG,
     uniforms: {
       uTime: { value: 0 },
-      uSizeScale: { value: particleSizeScale(size) },
       uOpacity: { value: opacity },
       uFieldHeight: { value: PETAL_FIELD_HEIGHT },
       uFieldBottom: { value: PETAL_FIELD_BOTTOM },
-      uPetal: { value: petalTexture },
+      uPetal: { value: atlas.texture },
+      uVariantCount: { value: atlas.variantCount },
     },
     transparent: true,
     blending: THREE.NormalBlending,
     depthTest: true,
     depthWrite: false,
+    side: THREE.DoubleSide,
   });
-  material.userData.baseSize = size;
   particleMaterials.push(material);
 
-  const points = new THREE.Points(geometry, material);
-  points.name = name;
-  particleRoot.add(points);
-  return points;
+  atlas.onReady = (variantCount) => {
+    material.uniforms.uVariantCount.value = variantCount;
+  };
+
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.name = name;
+  mesh.frustumCulled = false;
+  particleRoot.add(mesh);
+  return mesh;
 }
 
 function buildParticles() {
-  const petalTexture = getPetalTexture();
+  const atlas = getPetalAtlas();
   const count = window.innerWidth < 700 ? 110 : 200;
   const innerExclusionRadius = 2.5;
   const outerRadius = 15;
@@ -1097,15 +1024,16 @@ function buildParticles() {
         color: petalColors[Math.floor(Math.random() * petalColors.length)],
       };
     },
-    0.3,
-    0.62,
+    0.45,
+    0.68,
     {
-      petalTexture,
+      atlas,
       sizeMin: 0.5,
-      sizeMax: 2.0,
+      sizeMax: 1.8,
       fallMin: 0.35,
       fallMax: 0.9,
-      rotMax: 0.7,
+      tumbleMin: 0.3,
+      tumbleMax: 1.4,
       swayMin: 0.15,
       swayMax: 0.55,
     },
@@ -1147,7 +1075,6 @@ function getSkinListVisibleCount() {
 function scrollToCard(index) {
   const scrollMax = getScrollMax();
   const progress = index / Math.max(1, CARD_COUNT - 1);
-  suppressScrollSnap();
   window.scrollTo({ top: progress * scrollMax, behavior: "smooth" });
 }
 
@@ -1223,13 +1150,6 @@ function updateScrollState() {
   const scrollTop = scrollingElement.scrollTop;
   if (scrollTop === lastScrollTop) return;
 
-  const previousScrollTop = lastScrollTop;
-  if (previousScrollTop >= 0) {
-    const delta = scrollTop - previousScrollTop;
-    if (Math.abs(delta) > 0.5) {
-      lastScrollDirection = delta > 0 ? 1 : -1;
-    }
-  }
   lastScrollTop = scrollTop;
   const scrollMax = Math.max(
     scrollingElement.scrollHeight - scrollingElement.clientHeight,
@@ -1256,10 +1176,6 @@ function updateScrollState() {
       String(THREE.MathUtils.clamp(1 - scrollProgress * 3, 0, 0.92)),
     );
   }
-
-  if (previousScrollTop >= 0) {
-    scheduleScrollSnap();
-  }
 }
 
 function resize() {
@@ -1269,9 +1185,6 @@ function resize() {
   composer.setSize(width, height);
   bloomPass.setSize(Math.floor(width / 2), Math.floor(height / 2));
 
-  particleMaterials.forEach((mat) => {
-    mat.uniforms.uSizeScale.value = particleSizeScale(mat.userData.baseSize);
-  });
   camera.aspect = width / height;
 
   if (width < 560) {
@@ -1438,53 +1351,6 @@ function getScrollMax() {
   return Math.max(scrollingElement.scrollHeight - scrollingElement.clientHeight, 0);
 }
 
-function suppressScrollSnap(duration = SCROLL_SNAP_SUPPRESS_MS) {
-  window.clearTimeout(scrollSnapTimer);
-  scrollSnapTimer = 0;
-  suppressScrollSnapUntil = performance.now() + duration;
-}
-
-function getScrollTopForCard(index) {
-  const scrollMax = getScrollMax();
-  const progress = index / Math.max(1, CARD_COUNT - 1);
-  return progress * scrollMax;
-}
-
-function getDirectionSnapIndex() {
-  const scrollMax = getScrollMax();
-  if (scrollMax <= 0) return activeCardIndex;
-
-  const rawIndex = THREE.MathUtils.clamp(
-    (getScrollTop() / scrollMax) * (CARD_COUNT - 1),
-    0,
-    CARD_COUNT - 1,
-  );
-  const target = lastScrollDirection >= 0
-    ? Math.ceil(rawIndex - SNAP_INDEX_EPSILON)
-    : Math.floor(rawIndex + SNAP_INDEX_EPSILON);
-
-  return THREE.MathUtils.clamp(target, 0, CARD_COUNT - 1);
-}
-
-function snapToScrollDirection() {
-  scrollSnapTimer = 0;
-  if (isDragging || detailState !== "closed" || performance.now() < suppressScrollSnapUntil) return;
-
-  const targetIndex = getDirectionSnapIndex();
-  const targetTop = getScrollTopForCard(targetIndex);
-  if (Math.abs(getScrollTop() - targetTop) < 1) return;
-
-  suppressScrollSnap();
-  window.scrollTo({ top: targetTop, behavior: "smooth" });
-}
-
-function scheduleScrollSnap() {
-  if (isDragging || detailState !== "closed" || performance.now() < suppressScrollSnapUntil) return;
-
-  window.clearTimeout(scrollSnapTimer);
-  scrollSnapTimer = window.setTimeout(snapToScrollDirection, SCROLL_SNAP_IDLE_MS);
-}
-
 function getCardIndexAtPointer(event) {
   pointerVec.set(
     (event.clientX / window.innerWidth) * 2 - 1,
@@ -1556,10 +1422,7 @@ function handlePointerUp(event) {
     canvas.releasePointerCapture(event.pointerId);
   }
 
-  if (!isClick) {
-    scheduleScrollSnap();
-    return;
-  }
+  if (!isClick) return;
 
   const clickedCardIndex = getCardIndexAtPointer(event);
   if (clickedCardIndex >= 0) {
@@ -1649,19 +1512,6 @@ function startMusicFromScroll() {
   startMusic();
 }
 
-function handleWheelScroll(event) {
-  suppressScrollSnapUntil = 0;
-  if (Math.abs(event.deltaY) >= Math.abs(event.deltaX) && Math.abs(event.deltaY) > 0) {
-    lastScrollDirection = event.deltaY > 0 ? 1 : -1;
-  }
-  startMusicFromScroll();
-}
-
-function handleTouchScrollIntent() {
-  suppressScrollSnapUntil = 0;
-  startMusicFromScroll();
-}
-
 const audioGraph = { built: false, ctx: null, source: null, lowpass: null, gain: null };
 
 function ensureAudioGraph() {
@@ -1705,12 +1555,6 @@ function setUnderwater(active) {
 
 function handleScrollKey(event) {
   if (!event.defaultPrevented && scrollStartKeys.has(event.key)) {
-    suppressScrollSnapUntil = 0;
-    if (event.key === "ArrowUp" || event.key === "PageUp" || event.key === "Home") {
-      lastScrollDirection = -1;
-    } else if (event.key === "ArrowDown" || event.key === "PageDown" || event.key === "End" || event.key === " " || event.key === "Spacebar") {
-      lastScrollDirection = 1;
-    }
     startMusicFromScroll();
   }
 }
@@ -1975,8 +1819,8 @@ window.addEventListener("scroll", () => {
 }, { passive: true });
 document.addEventListener("scroll", updateScrollState, { passive: true });
 window.setInterval(updateScrollState, 120);
-window.addEventListener("wheel", handleWheelScroll, { passive: true });
-window.addEventListener("touchmove", handleTouchScrollIntent, { passive: true });
+window.addEventListener("wheel", startMusicFromScroll, { passive: true });
+window.addEventListener("touchmove", startMusicFromScroll, { passive: true });
 window.addEventListener("keydown", handleScrollKey);
 window.addEventListener("pointermove", handlePointerMove, { passive: false });
 canvas.addEventListener("pointerdown", handlePointerDown);

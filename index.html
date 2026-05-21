@@ -4,10 +4,18 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Ahri — Helix Scroll</title>
+    <script>
+      try {
+        const savedTheme = localStorage.getItem("helix-theme");
+        if (savedTheme) document.documentElement.dataset.theme = savedTheme;
+      } catch {
+        // Theme persistence is optional.
+      }
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="./styles.css?v=fox-spirit-8" />
+    <link rel="stylesheet" href="./styles.css?v=fox-spirit-14" />
     <script type="importmap">
       {
         "imports": {
@@ -22,6 +30,17 @@
       <div class="scene-shell" aria-hidden="true">
         <canvas id="helix-canvas"></canvas>
       </div>
+
+      <form class="theme-panel" id="theme-panel" aria-label="Theme selector">
+        <label class="theme-label" for="theme-select">Theme</label>
+        <select class="theme-select" id="theme-select" name="theme">
+          <option value="spirit">Fox Spirit</option>
+          <option value="arcade">Arcade</option>
+          <option value="coven">Coven</option>
+          <option value="elderwood">Elderwood</option>
+        </select>
+        <button class="theme-apply" type="submit">Apply</button>
+      </form>
 
       <aside class="seek-panel" aria-label="Skin index">
         <p class="seek-title">Skins</p>
@@ -39,6 +58,7 @@
           <span class="music-track">Legends Never Die</span>
         </div>
         <button class="music-toggle" type="button" aria-pressed="false" aria-label="Play Legends Never Die">▶</button>
+        <input class="music-volume" type="range" min="0" max="1" step="0.01" value="0.5" aria-label="Music volume" />
         <audio id="legends-player" class="music-player" src="./assets/Legends%20Never%20Die.mp3" preload="auto" loop aria-hidden="true"></audio>
       </section>
 
@@ -51,8 +71,22 @@
         <span class="scroll-hint-label">Scroll</span>
         <div class="scroll-hint-chevron"></div>
       </div>
+
+      <section class="card-detail" id="card-detail" aria-hidden="true">
+        <div class="card-detail-inner">
+          <img class="card-detail-image" id="cd-image" alt="" />
+          <div class="card-detail-meta">
+            <h2 class="card-detail-name" id="cd-name"></h2>
+            <p class="card-detail-date" id="cd-date"></p>
+            <p class="card-detail-price" id="cd-price"></p>
+            <button class="card-detail-close" id="cd-close" type="button">
+              <span aria-hidden="true">&larr;</span> close
+            </button>
+          </div>
+        </div>
+      </section>
     </main>
 
-    <script type="module" src="./script.js?v=fox-spirit-10"></script>
+    <script type="module" src="./script.js?v=card-detail-4"></script>
   </body>
 </html>

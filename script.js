@@ -6,36 +6,69 @@ import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 
 const PARTICLE_VERT = /* glsl */`
 attribute vec3 aBasePos;
-attribute float aPhase;
 attribute vec3 aColor;
+attribute float aPhase;
+attribute float aSize;
+attribute float aFallSpeed;
+attribute float aSwayAmp;
+attribute vec3 aTumbleAxis;
+attribute float aTumbleSpeed;
+attribute float aVariant;
 uniform float uTime;
-uniform float uSizeScale;
 uniform float uOpacity;
+uniform float uFieldHeight;
+uniform float uFieldBottom;
+uniform float uVariantCount;
+varying vec2 vUv;
 varying vec3 vColor;
 varying float vAlpha;
 
+mat3 rotMatAxisAngle(vec3 axis, float angle) {
+  float c = cos(angle);
+  float s = sin(angle);
+  float t = 1.0 - c;
+  float x = axis.x;
+  float y = axis.y;
+  float z = axis.z;
+  return mat3(
+    t*x*x + c,    t*x*y + s*z,  t*x*z - s*y,
+    t*x*y - s*z,  t*y*y + c,    t*y*z + s*x,
+    t*x*z + s*y,  t*y*z - s*x,  t*z*z + c
+  );
+}
+
 void main() {
+  vec3 anchor = aBasePos;
+  anchor.y -= uTime * aFallSpeed;
+  anchor.y = mod(anchor.y - uFieldBottom, uFieldHeight) + uFieldBottom;
+  anchor.x += sin(uTime * 0.4 + aPhase) * aSwayAmp;
+  anchor.z += cos(uTime * 0.32 + aPhase * 1.3) * aSwayAmp * 0.7;
+
+  float angle = uTime * aTumbleSpeed + aPhase;
+  mat3 R = rotMatAxisAngle(normalize(aTumbleAxis), angle);
+  vec3 local = R * (position * aSize);
+
+  float tile = 1.0 / max(uVariantCount, 1.0);
+  vUv = vec2(uv.x * tile + aVariant * tile, uv.y);
+
   vColor = aColor;
-  vec3 pos = aBasePos;
-  pos.x += sin(uTime * 0.38 + aPhase) * 0.14;
-  pos.y += cos(uTime * 0.32 + aPhase) * 0.12;
-  pos.z += sin(uTime * 0.44 + aPhase + 1.5708) * 0.10;
-  vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
-  gl_PointSize = uSizeScale / -mvPosition.z;
-  gl_Position = projectionMatrix * mvPosition;
-  vAlpha = uOpacity;
+  float pulse = mix(0.82, 1.0, 0.5 + 0.5 * sin(uTime * 0.6 + aPhase));
+  vAlpha = uOpacity * pulse;
+
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(anchor + local, 1.0);
 }
 `;
 
 const PARTICLE_FRAG = /* glsl */`
+uniform sampler2D uPetal;
+varying vec2 vUv;
 varying vec3 vColor;
 varying float vAlpha;
 
 void main() {
-  vec2 uv = gl_PointCoord - 0.5;
-  float d = dot(uv, uv) * 4.0;
-  if (d > 1.0) discard;
-  gl_FragColor = vec4(vColor, (1.0 - d) * vAlpha);
+  vec4 tex = texture2D(uPetal, vUv);
+  if (tex.a < 0.02) discard;
+  gl_FragColor = vec4(vColor * tex.rgb, tex.a * vAlpha);
 }
 `;
 
@@ -45,12 +78,55 @@ const musicPanel = document.querySelector(".music-panel");
 const musicAudio = document.querySelector("#legends-player");
 const musicToggle = document.querySelector(".music-toggle");
 const musicKicker = document.querySelector(".music-kicker");
+const musicVolume = document.querySelector(".music-volume");
 const cardDotsContainer = document.querySelector("#card-dots");
 const scrollHint = document.querySelector("#scroll-hint");
 const skinListEl = document.querySelector("#skin-list");
+const themeForm = document.querySelector("#theme-panel");
+const themeSelect = document.querySelector("#theme-select");
+const THEME_STORAGE_KEY = "helix-theme";
+const VALID_THEMES = new Set(["spirit", "arcade", "coven", "elderwood"]);
+
+function getActiveTheme() {
+  const theme = document.documentElement.dataset.theme || "spirit";
+  return VALID_THEMES.has(theme) ? theme : "spirit";
+}
+
+function initThemeControl() {
+  if (!themeSelect) return;
+
+  themeSelect.value = getActiveTheme();
+}
+
+function applyThemeSelection(event) {
+  event.preventDefault();
+  if (!themeSelect) return;
+
+  const nextTheme = VALID_THEMES.has(themeSelect.value) ? themeSelect.value : "spirit";
+  try {
+    localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
+  } catch {
+    // Theme persistence is optional.
+  }
+  document.documentElement.dataset.theme = nextTheme;
+  window.location.reload();
+}
+
+function readThemeColors() {
+  const styles = getComputedStyle(document.documentElement);
+  const readColor = (name, fallback) => styles.getPropertyValue(name).trim() || fallback;
+  return {
+    paper: readColor("--paper", "#0d0614"),
+    rose: readColor("--rose", "#ff6f98"),
+    gold: readColor("--gold", "#ffdc63"),
+    violet: readColor("--violet", "#d58bff"),
+  };
+}
+
+const themeColors = readThemeColors();
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.FogExp2(0x120820, 0.034);
+scene.fog = new THREE.FogExp2(themeColors.paper, 0.034);
 
 const renderer = new THREE.WebGLRenderer({
   canvas,
@@ -74,11 +150,11 @@ camera.position.set(0.35, 0.15, 10.5);
   envCanvas.height = 128;
   const envCtx = envCanvas.getContext("2d");
   const envGrad = envCtx.createLinearGradient(0, 0, 0, 128);
-  envGrad.addColorStop(0, "#0d0614");
-  envGrad.addColorStop(0.28, "#a855c8");
-  envGrad.addColorStop(0.56, "#e8547a");
-  envGrad.addColorStop(0.8, "#f5c842");
-  envGrad.addColorStop(1, "#0d0614");
+  envGrad.addColorStop(0, themeColors.paper);
+  envGrad.addColorStop(0.28, themeColors.violet);
+  envGrad.addColorStop(0.56, themeColors.rose);
+  envGrad.addColorStop(0.8, themeColors.gold);
+  envGrad.addColorStop(1, themeColors.paper);
   envCtx.fillStyle = envGrad;
   envCtx.fillRect(0, 0, 256, 128);
   const envTexture = new THREE.CanvasTexture(envCanvas);
@@ -128,6 +204,9 @@ let currentGalleryY = 0;
 let responsiveYOffset = 0;
 let isDragging = false;
 let lastScrollTop = -1;
+let lastScrollDirection = 1;
+let scrollSnapTimer = 0;
+let suppressScrollSnapUntil = 0;
 let musicRequested = false;
 let firstRenderDone = false;
 let scrollHintHidden = false;
@@ -136,7 +215,12 @@ let skinListExpanded = false;
 let renderedSkinListKey = "";
 const FRAME_BUDGET_MS = 1000 / 60;
 const CLICK_MOVE_TOLERANCE = 8;
+const SCROLL_SNAP_IDLE_MS = 160;
+const SCROLL_SNAP_SUPPRESS_MS = 780;
+const SNAP_INDEX_EPSILON = 0.002;
 let lastFrameTime = 0;
+const DEFAULT_MUSIC_VOLUME = 0.5;
+let musicVolumeLevel = DEFAULT_MUSIC_VOLUME;
 
 const scrollStartKeys = new Set([
   " ",
@@ -178,6 +262,34 @@ const cardTitleOverrides = {
   "ahri-kda-prestige-762x.jpg": "PRESTIGE K/DA",
 };
 
+const skinMetadata = {
+  "ahri-classic-762x.jpg":                          { name: "Classic Ahri",                       released: "Dec 14, 2011", price: "Base skin" },
+  "ahri-dynasty-762x.jpg":                          { name: "Dynasty Ahri",                       released: "Dec 14, 2011", price: "975 RP" },
+  "ahri-midnight-762x.jpg":                         { name: "Midnight Ahri",                      released: "Dec 14, 2011", price: "750 RP" },
+  "ahri-foxfire-762x.jpg":                          { name: "Foxfire Ahri",                       released: "Feb 22, 2012", price: "975 RP" },
+  "ahri-popstar-762x.jpg":                          { name: "Popstar Ahri",                       released: "Oct 29, 2014", price: "975 RP" },
+  "ahri-challenger-762x.jpg":                       { name: "Challenger Ahri",                    released: "Dec 15, 2015", price: "975 RP" },
+  "ahri-academy-762x.jpg":                          { name: "Academy Ahri",                       released: "Aug 26, 2016", price: "750 RP" },
+  "ahri-arcade-762x.jpg":                           { name: "Arcade Ahri",                        released: "Aug  3, 2016", price: "1350 RP" },
+  "ahri-star-guardian-762x.jpg":                    { name: "Star Guardian Ahri",                 released: "Sep  7, 2017", price: "1350 RP" },
+  "ahri-kda-762x.jpg":                              { name: "K/DA Ahri",                          released: "Nov  3, 2018", price: "1350 RP" },
+  "ahri-kda-prestige-762x.jpg":                     { name: "K/DA Ahri Prestige Edition",         released: "Nov  7, 2018", price: "Prestige Edition" },
+  "ahri-elderwood-762x.jpg":                        { name: "Elderwood Ahri",                     released: "Oct 28, 2019", price: "1350 RP" },
+  "ahri-spirit-blossom-762x.jpg":                   { name: "Spirit Blossom Ahri",                released: "Jul 22, 2020", price: "1350 RP" },
+  "ahri-kda-all-out-762x.jpg":                      { name: "K/DA ALL OUT Ahri",                  released: "Oct 28, 2020", price: "1350 RP" },
+  "ahri-coven-762x.jpg":                            { name: "Coven Ahri",                         released: "Oct 28, 2021", price: "1350 RP" },
+  "ahri-arcana-762x.jpg":                           { name: "Arcana Ahri",                        released: "May 26, 2022", price: "1350 RP" },
+  "ahri-snow-moon-762x.jpg":                        { name: "Snow Moon Ahri",                     released: "Jul 14, 2022", price: "1350 RP" },
+  "ahri-risen-legend-762x.jpg":                     { name: "Risen Legend Ahri",                  released: "May  2, 2024", price: "525 RP" },
+  "ahri-immortalized-legend-762x.jpg":              { name: "Immortalized Legend Ahri",           released: "May  2, 2024", price: "3400 RP" },
+  "ahri-spirit-blossom-springs-762x.jpg":           { name: "Spirit Blossom Springs Ahri",        released: "Apr  2, 2025", price: "1350 RP" },
+  "ahri-after-hours-spirit-blossom-springs-762x.jpg": { name: "After Hours Spirit Blossom Ahri", released: "Apr  2, 2025", price: "1350 RP" },
+};
+
+function getSkinMeta(index) {
+  return skinMetadata[imageFiles[index]] ?? { name: getCardTitle(imageFiles[index], index), released: "—", price: "—" };
+}
+
 const CARD_COUNT = imageFiles.length;
 const CARD_ANGLE_STEP = Math.PI / 3;
 const CARD_ANGLE_OFFSET = 0.35;
@@ -204,17 +316,18 @@ document.documentElement.style.setProperty(
 );
 
 const palette = [
-  new THREE.Color("#e8547a"),
-  new THREE.Color("#f5c842"),
-  new THREE.Color("#a855c8"),
+  new THREE.Color(themeColors.rose),
+  new THREE.Color(themeColors.gold),
+  new THREE.Color(themeColors.violet),
 ];
 
-const particleRingColors = [
-  new THREE.Color("#e8547a"),
-  new THREE.Color("#f5c842"),
-  new THREE.Color("#a855c8"),
-  new THREE.Color("#ff6eb4"),
-  new THREE.Color("#f7f8ff"),
+const petalColors = [
+  new THREE.Color(themeColors.rose).lerp(new THREE.Color("#ffffff"), 0.2),
+  new THREE.Color(themeColors.rose),
+  new THREE.Color(themeColors.violet).lerp(new THREE.Color(themeColors.rose), 0.35),
+  new THREE.Color(themeColors.rose).lerp(new THREE.Color("#ffffff"), 0.45),
+  new THREE.Color(themeColors.violet),
+  new THREE.Color(themeColors.gold).lerp(new THREE.Color("#ffffff"), 0.32),
 ];
 
 const cardMeshes = [];
@@ -225,19 +338,34 @@ let hoverGlowLight = null;
 const raycaster = new THREE.Raycaster();
 const pointerVec = new THREE.Vector2();
 
+// --- Detail view state ---
+let detailState = "closed"; // "closed" | "opening" | "open" | "closing"
+let detailCardIndex = -1;
+let detailAnimStart = 0;
+const DETAIL_TWEEN_MS = 700;
+const DETAIL_GAS_MS = 600;
+const _savedCamPos = new THREE.Vector3();
+const _savedCamLookAt = new THREE.Vector3();
+const _targetCamPos = new THREE.Vector3();
+const _targetCamLookAt = new THREE.Vector3();
+let savedScrollTop = 0;
+let detailFadeAmount = 0;
+let gasProgress = 0;
+let activeTypingToken = 0;
+
 const keyLight = new THREE.DirectionalLight(0xfff0f6, 2.0);
 keyLight.position.set(5, 6, 4);
 scene.add(keyLight);
 
-const fillLight = new THREE.DirectionalLight(0xc8a0ff, 0.52);
+const fillLight = new THREE.DirectionalLight(new THREE.Color(themeColors.violet), 0.52);
 fillLight.position.set(-4, -2, 3);
 scene.add(fillLight);
 
-const innerGlow = new THREE.PointLight(0xe8547a, 0.5, 8);
+const innerGlow = new THREE.PointLight(new THREE.Color(themeColors.rose), 0.5, 8);
 innerGlow.position.set(0, 0, 0);
 scene.add(innerGlow);
 
-scene.add(new THREE.AmbientLight(0xd4a0ff, 0.14));
+scene.add(new THREE.AmbientLight(new THREE.Color(themeColors.violet), 0.14));
 
 function makePanelTexture(fileName, index, options = {}) {
   const width = options.width ?? 1024;
@@ -252,14 +380,20 @@ function makePanelTexture(fileName, index, options = {}) {
 
   drawPanel(ctx, width, height, null, index, options);
 
+  let bakedCanvas = null;
   const image = new Image();
   image.onload = () => {
     drawPanel(ctx, width, height, image, index, { ...options, fileName });
     texture.needsUpdate = true;
+    const baked = document.createElement("canvas");
+    baked.width = width;
+    baked.height = height;
+    baked.getContext("2d").drawImage(drawing, 0, 0);
+    bakedCanvas = baked;
   };
   image.src = `./assets/${encodeURIComponent(fileName)}`;
 
-  return texture;
+  return { texture, drawing, ctx, getBakedCanvas: () => bakedCanvas };
 }
 
 function drawPanel(ctx, width, height, image, index, options) {
@@ -374,7 +508,7 @@ function drawCardTitle(ctx, width, height, index, fileName = "") {
   ctx.textBaseline = "middle";
 
   ctx.font = `500 ${mainSize}px Consolas, 'Liberation Mono', monospace`;
-  ctx.shadowColor = "rgba(255, 111, 152, 0.95)";
+  ctx.shadowColor = themeColors.rose;
   ctx.shadowBlur = 16;
   ctx.strokeStyle = "rgba(5, 2, 10, 0.98)";
   ctx.lineWidth = 6;
@@ -387,9 +521,9 @@ function drawCardTitle(ctx, width, height, index, fileName = "") {
   });
 
   ctx.font = "500 24px Consolas, 'Liberation Mono', monospace";
-  ctx.shadowColor = "rgba(213, 139, 255, 0.98)";
+  ctx.shadowColor = themeColors.violet;
   ctx.shadowBlur = 12;
-  ctx.fillStyle = "rgba(234, 204, 255, 1)";
+  ctx.fillStyle = themeColors.violet;
   ctx.fillText("AHRI", width / 2, blockTop - 18);
 
   const indexLabel =
@@ -397,7 +531,7 @@ function drawCardTitle(ctx, width, height, index, fileName = "") {
   ctx.font = "400 19px Consolas, 'Liberation Mono', monospace";
   ctx.shadowColor = "transparent";
   ctx.shadowBlur = 0;
-  ctx.fillStyle = "rgba(255, 220, 99, 0.92)";
+  ctx.fillStyle = themeColors.gold;
   ctx.textAlign = "right";
   ctx.fillText(indexLabel, width - inset - 18, inset + 26);
 
@@ -534,8 +668,119 @@ function getGlowTexture() {
   return sharedGlowTexture;
 }
 
+const PETAL_TILE_SIZE = 256;
+const PETAL_VARIANT_FILES = [
+  "./assets/petals/petal-1.png",
+  "./assets/petals/petal-2.png",
+  "./assets/petals/petal-3.png",
+  "./assets/petals/petal-4.png",
+];
+
+function drawProceduralPetal(ctx, size) {
+  ctx.save();
+  ctx.translate(size / 2, size / 2);
+
+  const grad = ctx.createRadialGradient(0, -size * 0.18, size * 0.04, 0, 0, size * 0.5);
+  grad.addColorStop(0, "rgba(255, 232, 240, 0.96)");
+  grad.addColorStop(0.35, "rgba(255, 168, 196, 0.9)");
+  grad.addColorStop(0.7, "rgba(232, 96, 140, 0.62)");
+  grad.addColorStop(1, "rgba(180, 40, 90, 0)");
+  ctx.fillStyle = grad;
+
+  ctx.beginPath();
+  ctx.moveTo(0, -size * 0.42);
+  ctx.bezierCurveTo(size * 0.34, -size * 0.22, size * 0.32, size * 0.28, 0, size * 0.42);
+  ctx.bezierCurveTo(-size * 0.32, size * 0.28, -size * 0.34, -size * 0.22, 0, -size * 0.42);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.strokeStyle = "rgba(200, 60, 110, 0.22)";
+  ctx.lineWidth = 1.4 * (size / 128);
+  ctx.beginPath();
+  ctx.moveTo(0, -size * 0.36);
+  ctx.lineTo(0, size * 0.36);
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+function drawTileWithGlow(ctx, tileX, image, tileSize) {
+  if (image) {
+    ctx.save();
+    ctx.shadowColor = "rgba(255, 140, 180, 0.85)";
+    ctx.shadowBlur = tileSize * 0.22;
+    ctx.drawImage(image, tileX, 0, tileSize, tileSize);
+    ctx.drawImage(image, tileX, 0, tileSize, tileSize);
+    ctx.restore();
+    ctx.drawImage(image, tileX, 0, tileSize, tileSize);
+  } else {
+    ctx.save();
+    ctx.translate(tileX, 0);
+    drawProceduralPetal(ctx, tileSize);
+    ctx.restore();
+  }
+}
+
+function loadImageOrNull(src) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = src;
+  });
+}
+
+let sharedPetalAtlas = null;
+function getPetalAtlas() {
+  if (sharedPetalAtlas) return sharedPetalAtlas;
+
+  const tile = PETAL_TILE_SIZE;
+  const cols = PETAL_VARIANT_FILES.length;
+  const canvas = document.createElement("canvas");
+  canvas.width = tile * cols;
+  canvas.height = tile;
+  const ctx = canvas.getContext("2d");
+
+  // Initial placeholder: procedural petal in each slot so first render works
+  for (let i = 0; i < cols; i += 1) {
+    drawTileWithGlow(ctx, i * tile, null, tile);
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.premultiplyAlpha = false;
+  texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+
+  const atlas = {
+    texture,
+    variantCount: cols,
+    onReady: null,
+  };
+  sharedPetalAtlas = atlas;
+
+  // Kick off async PNG loads; recompose when settled
+  Promise.all(PETAL_VARIANT_FILES.map(loadImageOrNull)).then((images) => {
+    const loaded = images.filter((img) => img !== null);
+    const usableCount = Math.max(1, loaded.length);
+    const cellSize = tile;
+    canvas.width = cellSize * usableCount;
+    canvas.height = cellSize;
+
+    for (let i = 0; i < usableCount; i += 1) {
+      const img = loaded[i % loaded.length] ?? null;
+      drawTileWithGlow(ctx, i * cellSize, img, cellSize);
+    }
+
+    atlas.variantCount = usableCount;
+    texture.needsUpdate = true;
+    if (typeof atlas.onReady === "function") atlas.onReady(usableCount);
+  });
+
+  return atlas;
+}
+
 function makeGlassPanel(fileName, index, config) {
-  const texture = makePanelTexture(fileName, index, {
+  const { texture, drawing, ctx, getBakedCanvas } = makePanelTexture(fileName, index, {
     featured: config.featured,
     width: config.featured ? 1000 : 760,
     height: config.featured ? 590 : 450,
@@ -562,6 +807,9 @@ function makeGlassPanel(fileName, index, config) {
     index,
     featured: Boolean(config.featured),
     hoverWeight: 0,
+    drawingCanvas: drawing,
+    drawingCtx: ctx,
+    getBakedCanvas,
   };
 
   const glowMesh = new THREE.Mesh(
@@ -744,26 +992,47 @@ function particleSizeScale(size) {
   return size * projY * h * 0.5;
 }
 
-function addParticleSet(name, count, createPoint, size, opacity) {
+const PETAL_FIELD_BOTTOM = -10;
+const PETAL_FIELD_TOP = 14;
+const PETAL_FIELD_HEIGHT = PETAL_FIELD_TOP - PETAL_FIELD_BOTTOM;
+
+function addParticleSet(name, count, createPoint, size, opacity, options = {}) {
+  const sizeMin = options.sizeMin ?? 1.0;
+  const sizeMax = options.sizeMax ?? 1.0;
+  const fallMin = options.fallMin ?? 0.35;
+  const fallMax = options.fallMax ?? 0.9;
+  const rotMax = options.rotMax ?? 0.7;
+  const swayMin = options.swayMin ?? 0.15;
+  const swayMax = options.swayMax ?? 0.55;
+  const petalTexture = options.petalTexture ?? getPetalTexture();
+
   const basePos = new Float32Array(count * 3);
   const colors = new Float32Array(count * 3);
   const phases = new Float32Array(count);
+  const sizes = new Float32Array(count);
+  const fallSpeeds = new Float32Array(count);
+  const rotSpeeds = new Float32Array(count);
+  const swayAmps = new Float32Array(count);
 
   for (let i = 0; i < count; i += 1) {
     const point = createPoint(i, count);
     const color = (
-      point.color ?? palette[Math.floor(Math.random() * palette.length)]
+      point.color ?? petalColors[Math.floor(Math.random() * petalColors.length)]
     ).clone();
-    color.lerp(new THREE.Color(0xffffff), 0.18 + Math.random() * 0.16);
-    color.multiplyScalar(1.65);
+    color.lerp(new THREE.Color(0xffffff), 0.05 + Math.random() * 0.1);
 
     basePos[i * 3] = point.x;
     basePos[i * 3 + 1] = point.y;
     basePos[i * 3 + 2] = point.z;
+
     colors[i * 3] = color.r;
     colors[i * 3 + 1] = color.g;
     colors[i * 3 + 2] = color.b;
     phases[i] = Math.random() * Math.PI * 2;
+    sizes[i] = THREE.MathUtils.lerp(sizeMin, sizeMax, Math.random());
+    fallSpeeds[i] = THREE.MathUtils.lerp(fallMin, fallMax, Math.random());
+    rotSpeeds[i] = (Math.random() * 2 - 1) * rotMax;
+    swayAmps[i] = THREE.MathUtils.lerp(swayMin, swayMax, Math.random());
   }
 
   const geometry = new THREE.BufferGeometry();
@@ -771,6 +1040,10 @@ function addParticleSet(name, count, createPoint, size, opacity) {
   geometry.setAttribute("aBasePos", new THREE.BufferAttribute(basePos, 3));
   geometry.setAttribute("aColor", new THREE.BufferAttribute(colors, 3));
   geometry.setAttribute("aPhase", new THREE.BufferAttribute(phases, 1));
+  geometry.setAttribute("aSize", new THREE.BufferAttribute(sizes, 1));
+  geometry.setAttribute("aFallSpeed", new THREE.BufferAttribute(fallSpeeds, 1));
+  geometry.setAttribute("aRotSpeed", new THREE.BufferAttribute(rotSpeeds, 1));
+  geometry.setAttribute("aSwayAmp", new THREE.BufferAttribute(swayAmps, 1));
 
   const material = new THREE.ShaderMaterial({
     vertexShader: PARTICLE_VERT,
@@ -779,9 +1052,13 @@ function addParticleSet(name, count, createPoint, size, opacity) {
       uTime: { value: 0 },
       uSizeScale: { value: particleSizeScale(size) },
       uOpacity: { value: opacity },
+      uFieldHeight: { value: PETAL_FIELD_HEIGHT },
+      uFieldBottom: { value: PETAL_FIELD_BOTTOM },
+      uPetal: { value: petalTexture },
     },
     transparent: true,
-    blending: THREE.AdditiveBlending,
+    blending: THREE.NormalBlending,
+    depthTest: true,
     depthWrite: false,
   });
   material.userData.baseSize = size;
@@ -794,52 +1071,44 @@ function addParticleSet(name, count, createPoint, size, opacity) {
 }
 
 function buildParticles() {
-  addParticleSet(
-    "outerHelix",
-    window.innerWidth < 700 ? 6200 : 11800,
-    (i, count) => {
-      const t = i / Math.max(1, count - 1);
-      const turnOffset = (i % 17) / 17;
-      const angle = t * Math.PI * 2 * PARTICLE_HELIX_TURNS + turnOffset * 0.34;
-      const radius = PARTICLE_HELIX_RADIUS + THREE.MathUtils.randFloatSpread(1.4);
-      const y = THREE.MathUtils.lerp(
-        PARTICLE_HELIX_HEIGHT / 2,
-        -PARTICLE_HELIX_HEIGHT / 2,
-        t,
-      );
-      const ringIndex =
-        Math.floor(t * PARTICLE_HELIX_TURNS) % particleRingColors.length;
-      return {
-        x: Math.cos(angle) * radius + THREE.MathUtils.randFloatSpread(0.34),
-        y: y + THREE.MathUtils.randFloatSpread(0.62),
-        z: Math.sin(angle) * radius + THREE.MathUtils.randFloatSpread(0.34),
-        color: particleRingColors[ringIndex],
-      };
-    },
-    0.12,
-    0.95,
-  );
+  const petalTexture = getPetalTexture();
+  const count = window.innerWidth < 700 ? 110 : 200;
+  const innerExclusionRadius = 2.5;
+  const outerRadius = 15;
 
   addParticleSet(
-    "innerDust",
-    window.innerWidth < 700 ? 160 : 320,
+    "petals",
+    count,
     () => {
       const angle = Math.random() * Math.PI * 2;
-      const radius = 1.2 + Math.random() * 2.6;
+      const rNorm = Math.sqrt(Math.random());
+      const radius = THREE.MathUtils.lerp(innerExclusionRadius, outerRadius, rNorm);
+      const x = Math.cos(angle) * radius;
+      const z = Math.sin(angle) * radius;
       const y = THREE.MathUtils.lerp(
-        HELIX_HEIGHT / 2,
-        -HELIX_HEIGHT / 2,
+        PETAL_FIELD_BOTTOM,
+        PETAL_FIELD_TOP,
         Math.random(),
       );
       return {
-        x: Math.cos(angle) * radius + THREE.MathUtils.randFloatSpread(0.4),
+        x,
         y,
-        z: Math.sin(angle) * radius + THREE.MathUtils.randFloatSpread(0.4),
-        color: palette[Math.floor(Math.random() * palette.length)],
+        z,
+        color: petalColors[Math.floor(Math.random() * petalColors.length)],
       };
     },
-    0.07,
-    0.52,
+    0.3,
+    0.62,
+    {
+      petalTexture,
+      sizeMin: 0.5,
+      sizeMax: 2.0,
+      fallMin: 0.35,
+      fallMax: 0.9,
+      rotMax: 0.7,
+      swayMin: 0.15,
+      swayMax: 0.55,
+    },
   );
 }
 
@@ -878,6 +1147,7 @@ function getSkinListVisibleCount() {
 function scrollToCard(index) {
   const scrollMax = getScrollMax();
   const progress = index / Math.max(1, CARD_COUNT - 1);
+  suppressScrollSnap();
   window.scrollTo({ top: progress * scrollMax, behavior: "smooth" });
 }
 
@@ -953,6 +1223,13 @@ function updateScrollState() {
   const scrollTop = scrollingElement.scrollTop;
   if (scrollTop === lastScrollTop) return;
 
+  const previousScrollTop = lastScrollTop;
+  if (previousScrollTop >= 0) {
+    const delta = scrollTop - previousScrollTop;
+    if (Math.abs(delta) > 0.5) {
+      lastScrollDirection = delta > 0 ? 1 : -1;
+    }
+  }
   lastScrollTop = scrollTop;
   const scrollMax = Math.max(
     scrollingElement.scrollHeight - scrollingElement.clientHeight,
@@ -978,6 +1255,10 @@ function updateScrollState() {
       "--caption-opacity",
       String(THREE.MathUtils.clamp(1 - scrollProgress * 3, 0, 0.92)),
     );
+  }
+
+  if (previousScrollTop >= 0) {
+    scheduleScrollSnap();
   }
 }
 
@@ -1021,7 +1302,6 @@ function resize() {
   currentGalleryY = targetGalleryY;
   galleryRoot.position.y = currentGalleryY;
   particleRoot.rotation.y = galleryRoot.rotation.y;
-  particleRoot.position.y = galleryRoot.position.y;
   renderedSkinListKey = "";
   updateSkinList();
 }
@@ -1035,25 +1315,40 @@ function animate(timestamp = 0) {
   updateScrollState();
 
   const motionTime = animationPaused ? 0 : elapsed;
-  particleMaterials.forEach((mat) => { mat.uniforms.uTime.value = motionTime; });
-  const targetRotation = scrollRotation + pointerX * 0.035;
+  const detailNow = performance.now();
+  updateDetailView(detailNow);
 
-  root.rotation.y = pointerX * 0.035;
-  root.rotation.x = pointerY * -0.035;
-  root.position.y = THREE.MathUtils.lerp(root.position.y, 0, 0.05);
-  galleryRoot.rotation.y = THREE.MathUtils.lerp(
-    galleryRoot.rotation.y,
-    targetRotation,
-    0.08,
-  );
-  updateFocusedCardTarget();
-  currentGalleryY = THREE.MathUtils.lerp(currentGalleryY, targetGalleryY, 0.075);
-  galleryRoot.position.y = currentGalleryY;
-  particleRoot.rotation.y = galleryRoot.rotation.y;
-  particleRoot.position.y = galleryRoot.position.y;
-  camera.position.x = THREE.MathUtils.lerp(camera.position.x, 0.35 + pointerX * 0.24, 0.05);
-  camera.position.y = THREE.MathUtils.lerp(camera.position.y, 0.15 + pointerY * 0.16, 0.05);
-  camera.lookAt(0, 0, 0);
+  particleMaterials.forEach((mat) => {
+    mat.uniforms.uTime.value = motionTime;
+    if (mat.userData == null) mat.userData = {};
+    if (mat.userData.baseOpacity === undefined) mat.userData.baseOpacity = mat.uniforms.uOpacity.value;
+    mat.uniforms.uOpacity.value = mat.userData.baseOpacity * (1 - detailFadeAmount);
+  });
+
+  if (detailState === "closed") {
+    const targetRotation = scrollRotation + pointerX * 0.035;
+    root.rotation.y = pointerX * 0.035;
+    root.rotation.x = pointerY * -0.035;
+    root.position.y = THREE.MathUtils.lerp(root.position.y, 0, 0.05);
+    galleryRoot.rotation.y = THREE.MathUtils.lerp(galleryRoot.rotation.y, targetRotation, 0.08);
+    updateFocusedCardTarget();
+    currentGalleryY = THREE.MathUtils.lerp(currentGalleryY, targetGalleryY, 0.075);
+    galleryRoot.position.y = currentGalleryY;
+    particleRoot.rotation.y = galleryRoot.rotation.y;
+    camera.position.x = THREE.MathUtils.lerp(camera.position.x, 0.35 + pointerX * 0.24, 0.05);
+    camera.position.y = THREE.MathUtils.lerp(camera.position.y, 0.15 + pointerY * 0.16, 0.05);
+    camera.lookAt(0, 0, 0);
+  }
+
+  spineRoot.traverse((obj) => {
+    if (obj.isMesh && obj.material) {
+      if (obj.userData.baseOpacity === undefined) {
+        obj.userData.baseOpacity = obj.material.opacity;
+        if (!obj.material.transparent) obj.material.transparent = true;
+      }
+      obj.material.opacity = obj.userData.baseOpacity * (1 - detailFadeAmount);
+    }
+  });
 
   panelRoot.children.forEach((mesh) => {
     const { base, rotation, float, phase, parallax, index, angle } = mesh.userData;
@@ -1081,15 +1376,26 @@ function animate(timestamp = 0) {
     mesh.rotation.x = rotation.x + pointerY * 0.04;
     mesh.rotation.z = rotation.z * (0.55 + focusWeight * 0.45);
     mesh.scale.setScalar(0.84 + focusWeight * 0.24 + hw * 0.08);
-    mesh.material.opacity = 0.72 + focusWeight * 0.25;
+
+    const isDetailCard = detailCardIndex >= 0 && index === detailCardIndex;
+    if (isDetailCard && detailState !== "closed") {
+      mesh.material.opacity = Math.max(0, 1 - detailFadeAmount);
+    } else {
+      mesh.material.opacity = (0.72 + focusWeight * 0.25) * (1 - detailFadeAmount);
+    }
+
     mesh.renderOrder = getCardRenderOrder(base, galleryRoot.rotation.y);
 
     if (mesh.userData.glowMesh) {
-      mesh.userData.glowMesh.material.opacity = THREE.MathUtils.lerp(
-        mesh.userData.glowMesh.material.opacity,
-        hw * 0.85,
-        0.1,
-      );
+      if (isDetailCard && detailState !== "closed") {
+        mesh.userData.glowMesh.material.opacity = Math.max(0, 1 - detailFadeAmount);
+      } else {
+        mesh.userData.glowMesh.material.opacity = THREE.MathUtils.lerp(
+          mesh.userData.glowMesh.material.opacity,
+          hw * 0.85,
+          0.1,
+        );
+      }
     }
   });
 
@@ -1130,6 +1436,53 @@ function getScrollTop() {
 function getScrollMax() {
   const scrollingElement = getScrollingElement();
   return Math.max(scrollingElement.scrollHeight - scrollingElement.clientHeight, 0);
+}
+
+function suppressScrollSnap(duration = SCROLL_SNAP_SUPPRESS_MS) {
+  window.clearTimeout(scrollSnapTimer);
+  scrollSnapTimer = 0;
+  suppressScrollSnapUntil = performance.now() + duration;
+}
+
+function getScrollTopForCard(index) {
+  const scrollMax = getScrollMax();
+  const progress = index / Math.max(1, CARD_COUNT - 1);
+  return progress * scrollMax;
+}
+
+function getDirectionSnapIndex() {
+  const scrollMax = getScrollMax();
+  if (scrollMax <= 0) return activeCardIndex;
+
+  const rawIndex = THREE.MathUtils.clamp(
+    (getScrollTop() / scrollMax) * (CARD_COUNT - 1),
+    0,
+    CARD_COUNT - 1,
+  );
+  const target = lastScrollDirection >= 0
+    ? Math.ceil(rawIndex - SNAP_INDEX_EPSILON)
+    : Math.floor(rawIndex + SNAP_INDEX_EPSILON);
+
+  return THREE.MathUtils.clamp(target, 0, CARD_COUNT - 1);
+}
+
+function snapToScrollDirection() {
+  scrollSnapTimer = 0;
+  if (isDragging || detailState !== "closed" || performance.now() < suppressScrollSnapUntil) return;
+
+  const targetIndex = getDirectionSnapIndex();
+  const targetTop = getScrollTopForCard(targetIndex);
+  if (Math.abs(getScrollTop() - targetTop) < 1) return;
+
+  suppressScrollSnap();
+  window.scrollTo({ top: targetTop, behavior: "smooth" });
+}
+
+function scheduleScrollSnap() {
+  if (isDragging || detailState !== "closed" || performance.now() < suppressScrollSnapUntil) return;
+
+  window.clearTimeout(scrollSnapTimer);
+  scrollSnapTimer = window.setTimeout(snapToScrollDirection, SCROLL_SNAP_IDLE_MS);
 }
 
 function getCardIndexAtPointer(event) {
@@ -1203,11 +1556,18 @@ function handlePointerUp(event) {
     canvas.releasePointerCapture(event.pointerId);
   }
 
-  if (!isClick) return;
+  if (!isClick) {
+    scheduleScrollSnap();
+    return;
+  }
 
   const clickedCardIndex = getCardIndexAtPointer(event);
   if (clickedCardIndex >= 0) {
-    scrollToCard(clickedCardIndex);
+    if (clickedCardIndex === activeCardIndex) {
+      openDetailView(clickedCardIndex);
+    } else {
+      scrollToCard(clickedCardIndex);
+    }
   }
 }
 
@@ -1234,12 +1594,26 @@ function updateMusicButton(isPlaying) {
   musicPanel?.classList.toggle("is-playing", isPlaying);
 }
 
+function setMusicVolume(value) {
+  const numericValue = Number(value);
+  musicVolumeLevel = Number.isFinite(numericValue)
+    ? THREE.MathUtils.clamp(numericValue, 0, 1)
+    : DEFAULT_MUSIC_VOLUME;
+  if (musicAudio) {
+    musicAudio.volume = musicVolumeLevel;
+  }
+  if (musicVolume) {
+    musicVolume.value = String(musicVolumeLevel);
+    musicVolume.style.setProperty("--volume-percent", `${musicVolumeLevel * 100}%`);
+  }
+}
+
 function startMusic() {
   if (!musicAudio) return;
 
   musicRequested = true;
   musicPanel?.classList.remove("needs-interaction");
-  musicAudio.volume = 0.72;
+  musicAudio.volume = musicVolumeLevel;
   const playAttempt = musicAudio.play();
 
   if (playAttempt) {
@@ -1275,17 +1649,322 @@ function startMusicFromScroll() {
   startMusic();
 }
 
+function handleWheelScroll(event) {
+  suppressScrollSnapUntil = 0;
+  if (Math.abs(event.deltaY) >= Math.abs(event.deltaX) && Math.abs(event.deltaY) > 0) {
+    lastScrollDirection = event.deltaY > 0 ? 1 : -1;
+  }
+  startMusicFromScroll();
+}
+
+function handleTouchScrollIntent() {
+  suppressScrollSnapUntil = 0;
+  startMusicFromScroll();
+}
+
+const audioGraph = { built: false, ctx: null, source: null, lowpass: null, gain: null };
+
+function ensureAudioGraph() {
+  if (audioGraph.built || !musicAudio) return;
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const source = ctx.createMediaElementSource(musicAudio);
+    const lowpass = ctx.createBiquadFilter();
+    lowpass.type = "lowpass";
+    lowpass.frequency.value = 20000;
+    lowpass.Q.value = 0.5;
+    const gain = ctx.createGain();
+    gain.gain.value = 1;
+    source.connect(lowpass);
+    lowpass.connect(gain);
+    gain.connect(ctx.destination);
+    audioGraph.ctx = ctx;
+    audioGraph.source = source;
+    audioGraph.lowpass = lowpass;
+    audioGraph.gain = gain;
+    audioGraph.built = true;
+  } catch (_) {
+    // Web Audio unavailable — music plays dry, no underwater effect
+  }
+}
+
+function setUnderwater(active) {
+  if (!audioGraph.built) return;
+  if (audioGraph.ctx.state === "suspended") audioGraph.ctx.resume().catch(() => {});
+  const now = audioGraph.ctx.currentTime;
+  const targetHz = active ? 380 : 20000;
+  const targetQ  = active ? 1.2 : 0.5;
+  const targetG  = active ? 0.78 : 1.0;
+  audioGraph.lowpass.frequency.cancelScheduledValues(now);
+  audioGraph.lowpass.Q.cancelScheduledValues(now);
+  audioGraph.gain.gain.cancelScheduledValues(now);
+  audioGraph.lowpass.frequency.linearRampToValueAtTime(targetHz, now + 0.7);
+  audioGraph.lowpass.Q.linearRampToValueAtTime(targetQ, now + 0.7);
+  audioGraph.gain.gain.linearRampToValueAtTime(targetG, now + 0.7);
+}
+
 function handleScrollKey(event) {
   if (!event.defaultPrevented && scrollStartKeys.has(event.key)) {
+    suppressScrollSnapUntil = 0;
+    if (event.key === "ArrowUp" || event.key === "PageUp" || event.key === "Home") {
+      lastScrollDirection = -1;
+    } else if (event.key === "ArrowDown" || event.key === "PageDown" || event.key === "End" || event.key === " " || event.key === "Spacebar") {
+      lastScrollDirection = 1;
+    }
     startMusicFromScroll();
   }
 }
 
+// --- Detail view helpers ---
+
+function easeInOutCubic(t) {
+  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+}
+
+function computeDetailCamTarget(mesh) {
+  mesh.updateWorldMatrix(true, false);
+  const worldPos = new THREE.Vector3().setFromMatrixPosition(mesh.matrixWorld);
+  const normal = new THREE.Vector3(0, 0, 1).transformDirection(mesh.matrixWorld);
+  _targetCamLookAt.copy(worldPos);
+  _targetCamPos.copy(worldPos).addScaledVector(normal, 2.4);
+}
+
+function restoreCardTexture(mesh) {
+  const baked = mesh.userData.getBakedCanvas?.();
+  const c = mesh.userData.drawingCanvas;
+  const ctx = mesh.userData.drawingCtx;
+  if (!baked || !c || !ctx) return;
+  ctx.clearRect(0, 0, c.width, c.height);
+  ctx.drawImage(baked, 0, 0);
+  mesh.material.map.needsUpdate = true;
+}
+
+function tickGasDissolve(mesh, p) {
+  const baked = mesh.userData.getBakedCanvas?.();
+  const c = mesh.userData.drawingCanvas;
+  const ctx = mesh.userData.drawingCtx;
+  if (!baked || !c || !ctx) return;
+  ctx.clearRect(0, 0, c.width, c.height);
+  ctx.drawImage(baked, 0, 0);
+  ctx.globalCompositeOperation = "destination-out";
+  const cx = c.width / 2;
+  const cy = c.height / 2;
+  const r = p * Math.hypot(c.width, c.height) * 0.6;
+  if (r > 0) {
+    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+    grad.addColorStop(0, "rgba(0,0,0,1)");
+    grad.addColorStop(0.7, "rgba(0,0,0,0.85)");
+    grad.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, c.width, c.height);
+  }
+  ctx.globalCompositeOperation = "source-over";
+  mesh.material.map.needsUpdate = true;
+}
+
+function typeInto(el, text, speed, token) {
+  return new Promise((resolve) => {
+    if (!el) { resolve(); return; }
+    el.textContent = "";
+    let i = 0;
+    const tick = () => {
+      if (activeTypingToken !== token) { resolve(); return; }
+      if (i >= text.length) { resolve(); return; }
+      el.textContent += text[i++];
+      setTimeout(tick, speed);
+    };
+    setTimeout(tick, speed);
+  });
+}
+
+async function runTypingSequence(meta, token) {
+  const cdName = document.getElementById("cd-name");
+  const cdDate = document.getElementById("cd-date");
+  const cdPrice = document.getElementById("cd-price");
+  await typeInto(cdName, meta.name, 38, token);
+  if (activeTypingToken !== token) return;
+  await typeInto(cdDate, "Released  " + meta.released, 26, token);
+  if (activeTypingToken !== token) return;
+  await typeInto(cdPrice, meta.price, 26, token);
+}
+
+function onDetailScrollAttempt() {
+  closeDetailView();
+}
+
+function onDetailKey(event) {
+  if (event.key === "Escape" || scrollStartKeys.has(event.key)) {
+    closeDetailView();
+  }
+}
+
+function updateDetailView(now) {
+  if (detailState === "closed") return;
+
+  const mesh = detailCardIndex >= 0 ? cardMeshes[detailCardIndex] : null;
+  const overlay = document.getElementById("card-detail");
+
+  if (detailState === "opening") {
+    const elapsed = now - detailAnimStart;
+    const t = Math.min(elapsed / DETAIL_TWEEN_MS, 1);
+    const e = easeInOutCubic(t);
+    detailFadeAmount = e;
+
+    camera.position.lerpVectors(_savedCamPos, _targetCamPos, e);
+    camera.lookAt(
+      _savedCamLookAt.x + (_targetCamLookAt.x - _savedCamLookAt.x) * e,
+      _savedCamLookAt.y + (_targetCamLookAt.y - _savedCamLookAt.y) * e,
+      _savedCamLookAt.z + (_targetCamLookAt.z - _savedCamLookAt.z) * e,
+    );
+
+    // Gas starts 100ms into the fly-in, runs 600ms (finishes at 700ms with camera)
+    const gasT = Math.min(Math.max((elapsed - 100) / DETAIL_GAS_MS, 0), 1);
+    gasProgress = easeInOutCubic(gasT);
+    if (mesh) tickGasDissolve(mesh, gasProgress);
+
+    // Show overlay the moment gas begins; opacity tracks gas progress
+    if (gasT > 0) {
+      if (overlay && !overlay.classList.contains("is-open")) {
+        const cdImage = document.getElementById("cd-image");
+        if (cdImage) {
+          cdImage.src = `./assets/${encodeURIComponent(imageFiles[detailCardIndex])}`;
+          cdImage.alt = getSkinMeta(detailCardIndex).name;
+        }
+        document.getElementById("cd-name").textContent = "";
+        document.getElementById("cd-date").textContent = "";
+        document.getElementById("cd-price").textContent = "";
+        overlay.setAttribute("aria-hidden", "false");
+        overlay.classList.add("is-open");
+        overlay.style.opacity = "0";
+        const token = ++activeTypingToken;
+        runTypingSequence(getSkinMeta(detailCardIndex), token);
+      }
+      if (overlay) overlay.style.opacity = String(gasProgress);
+    }
+
+    if (t >= 1) {
+      if (overlay) overlay.style.opacity = "1";
+      detailState = "open";
+    }
+
+  } else if (detailState === "open") {
+    camera.position.copy(_targetCamPos);
+    camera.lookAt(_targetCamLookAt);
+
+  } else if (detailState === "closing") {
+    const elapsed = now - detailAnimStart;
+    const t = Math.min(elapsed / DETAIL_TWEEN_MS, 1);
+    const e = easeInOutCubic(t);
+    detailFadeAmount = 1 - e;
+
+    // Camera reverse: full 700ms
+    camera.position.lerpVectors(_targetCamPos, _savedCamPos, e);
+    camera.lookAt(
+      _targetCamLookAt.x + (_savedCamLookAt.x - _targetCamLookAt.x) * e,
+      _targetCamLookAt.y + (_savedCamLookAt.y - _targetCamLookAt.y) * e,
+      _targetCamLookAt.z + (_savedCamLookAt.z - _targetCamLookAt.z) * e,
+    );
+
+    // Gas reverse: starts immediately, runs 600ms (matches open timing mirror)
+    const gasT = Math.min(elapsed / DETAIL_GAS_MS, 1);
+    gasProgress = 1 - easeInOutCubic(gasT);
+    if (mesh) tickGasDissolve(mesh, gasProgress);
+
+    // Overlay fades out with gas
+    if (overlay) overlay.style.opacity = String(gasProgress);
+
+    if (t >= 1) {
+      if (mesh) restoreCardTexture(mesh);
+      if (overlay) {
+        overlay.classList.remove("is-open");
+        overlay.setAttribute("aria-hidden", "true");
+        overlay.style.opacity = "";
+      }
+      document.body.style.overflow = "";
+      delete document.body.dataset.detailOpen;
+      window.scrollTo({ top: savedScrollTop, behavior: "auto" });
+      detailFadeAmount = 0;
+      detailState = "closed";
+      detailCardIndex = -1;
+      gasProgress = 0;
+    }
+  }
+}
+
+function openDetailView(idx) {
+  if (detailState !== "closed") return;
+
+  detailCardIndex = idx;
+  savedScrollTop = getScrollTop();
+  _savedCamPos.copy(camera.position);
+  _savedCamLookAt.set(0, 0, 0);
+
+  const mesh = cardMeshes[idx];
+  if (mesh) {
+    computeDetailCamTarget(mesh);
+  } else {
+    _targetCamPos.copy(_savedCamPos);
+    _targetCamLookAt.set(0, 0, 0);
+  }
+
+  document.body.style.overflow = "hidden";
+  document.body.dataset.detailOpen = "1";
+
+  detailState = "opening";
+  detailAnimStart = performance.now();
+
+  ensureAudioGraph();
+  setUnderwater(true);
+
+  window.addEventListener("wheel", onDetailScrollAttempt, { passive: true });
+  window.addEventListener("touchmove", onDetailScrollAttempt, { passive: true });
+  window.addEventListener("keydown", onDetailKey);
+  document.getElementById("cd-close")?.addEventListener("click", closeDetailView);
+}
+
+function closeDetailView() {
+  if (detailState === "closed" || detailState === "closing") return;
+
+  window.removeEventListener("wheel", onDetailScrollAttempt);
+  window.removeEventListener("touchmove", onDetailScrollAttempt);
+  window.removeEventListener("keydown", onDetailKey);
+  document.getElementById("cd-close")?.removeEventListener("click", closeDetailView);
+  ++activeTypingToken;
+
+  setUnderwater(false);
+
+  if (detailState === "opening") {
+    // Interrupted mid-open: snap closed immediately
+    const mesh = detailCardIndex >= 0 ? cardMeshes[detailCardIndex] : null;
+    if (mesh) restoreCardTexture(mesh);
+    const overlay = document.getElementById("card-detail");
+    if (overlay) {
+      overlay.classList.remove("is-open");
+      overlay.setAttribute("aria-hidden", "true");
+      overlay.style.opacity = "";
+    }
+    document.body.style.overflow = "";
+    delete document.body.dataset.detailOpen;
+    window.scrollTo({ top: savedScrollTop, behavior: "auto" });
+    detailFadeAmount = 0;
+    gasProgress = 0;
+    detailState = "closed";
+    detailCardIndex = -1;
+    return;
+  }
+
+  // Closing from "open": set _targetCamPos to current (camera is at card) and reverse
+  detailState = "closing";
+  detailAnimStart = performance.now();
+}
+
+initThemeControl();
 buildPanels();
 buildSpine();
 buildParticles();
 buildDots();
 updateSkinList();
+setMusicVolume(DEFAULT_MUSIC_VOLUME);
 resize();
 requestAnimationFrame(animate);
 
@@ -1296,13 +1975,14 @@ window.addEventListener("scroll", () => {
 }, { passive: true });
 document.addEventListener("scroll", updateScrollState, { passive: true });
 window.setInterval(updateScrollState, 120);
-window.addEventListener("wheel", startMusicFromScroll, { passive: true });
-window.addEventListener("touchmove", startMusicFromScroll, { passive: true });
+window.addEventListener("wheel", handleWheelScroll, { passive: true });
+window.addEventListener("touchmove", handleTouchScrollIntent, { passive: true });
 window.addEventListener("keydown", handleScrollKey);
 window.addEventListener("pointermove", handlePointerMove, { passive: false });
 canvas.addEventListener("pointerdown", handlePointerDown);
 canvas.addEventListener("pointerup", handlePointerUp);
 canvas.addEventListener("pointercancel", handlePointerCancel);
+themeForm?.addEventListener("submit", applyThemeSelection);
 skinListEl?.closest(".seek-panel")?.addEventListener("mouseenter", () => setSkinListExpanded(true));
 skinListEl?.closest(".seek-panel")?.addEventListener("mouseleave", () => setSkinListExpanded(false));
 skinListEl?.closest(".seek-panel")?.addEventListener("focusin", () => setSkinListExpanded(true));
@@ -1318,6 +1998,10 @@ musicToggle?.addEventListener("click", () => {
   } else {
     startMusic();
   }
+});
+
+musicVolume?.addEventListener("input", (event) => {
+  setMusicVolume(event.currentTarget.value);
 });
 
 document.addEventListener("visibilitychange", () => {

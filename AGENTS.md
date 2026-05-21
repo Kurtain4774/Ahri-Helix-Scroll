@@ -124,6 +124,9 @@ should not resume from focus alone.
 
 The music button uses play/pause symbol text, updates `aria-pressed` and
 `aria-label`, and toggles `is-playing` on `.music-panel`.
+The volume slider initializes audio at 50% volume and should preserve the
+user-selected level across play, pause, scroll-start playback, and focus-loss
+pauses.
 
 ## Styling Guidelines
 
@@ -178,7 +181,7 @@ For visual or interaction changes, verify:
 - Do not rename assets unless all references are updated.
 - When changing CSS/JS loaded by `index.html`, update the cache-busting query
   string if the change needs to be visible after deploy.
-  Current query strings are `styles.css?v=fox-spirit-4` and
-  `script.js?v=fox-spirit-4`.
+  Current query strings are `styles.css?v=fox-spirit-13` and
+  `script.js?v=card-detail-2`.
 - Be careful with existing uncommitted changes. Treat them as user work unless
   told otherwise.

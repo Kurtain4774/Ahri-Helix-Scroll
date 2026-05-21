@@ -49,7 +49,7 @@ Pointer events on the canvas translate drag distance into `window.scrollTo` call
 
 ### Music
 
-Music remains paused until the user clicks the music panel Play button or starts scrolling the page. If browser playback policy blocks that explicit Play/scroll interaction, the panel shows the `needs-interaction` state. Music pauses when the page is hidden or loses focus, and does not resume from focus alone.
+Music remains paused until the user clicks the music panel Play button or starts scrolling the page. If browser playback policy blocks that explicit Play/scroll interaction, the panel shows the `needs-interaction` state. Music starts at 50% volume, follows the volume slider, pauses when the page is hidden or loses focus, and does not resume from focus alone.
 
 ## Card Content
 
@@ -86,7 +86,7 @@ CSS breakpoints mirror these at 560px and 780px.
 ## Cache-busting
 
 CSS and JS are versioned via query strings in index.html. Current versions:
-- CSS: `?v=cylinder-carousel-1`
-- JS: `?v=outer-particle-helix-3`
+- CSS: `?v=fox-spirit-13`
+- JS: `?v=card-detail-2`
 
 Increment the version string when deploying changes.

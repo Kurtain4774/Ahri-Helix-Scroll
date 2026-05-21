@@ -79,7 +79,7 @@ body {
     radial-gradient(circle at 84% 78%, var(--theme-glow-c), transparent 20rem),
     radial-gradient(circle at 48% 50%, var(--theme-glow-d), transparent 38rem),
     linear-gradient(135deg, rgba(13, 6, 20, 0.72), rgba(18, 8, 32, 0.64)),
-    var(--paper) url("./assets/background.png") center / cover fixed no-repeat;
+    var(--paper);
   color: var(--ink);
 }
 

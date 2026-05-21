@@ -892,18 +892,108 @@ const PETAL_FIELD_BOTTOM = -10;
 const PETAL_FIELD_TOP = 14;
 const PETAL_FIELD_HEIGHT = PETAL_FIELD_TOP - PETAL_FIELD_BOTTOM;
 
-const PETAL_BASE_GEOMETRY = new THREE.PlaneGeometry(1, 1);
+function spawnPetalInstance(innerR, outerR) {
+  const angle = Math.random() * Math.PI * 2;
+  const rNorm = Math.sqrt(Math.random());
+  const radius = THREE.MathUtils.lerp(innerR, outerR, rNorm);
+  return {
+    x: Math.cos(angle) * radius,
+    y: THREE.MathUtils.lerp(PETAL_FIELD_BOTTOM, PETAL_FIELD_TOP, Math.random()),
+    z: Math.sin(angle) * radius,
+    color: petalColors[Math.floor(Math.random() * petalColors.length)],
+  };
+}
 
-function addParticleSet(name, count, createPoint, baseScale, opacity, options = {}) {
-  const sizeMin = options.sizeMin ?? 0.5;
-  const sizeMax = options.sizeMax ?? 1.8;
-  const fallMin = options.fallMin ?? 0.35;
-  const fallMax = options.fallMax ?? 0.9;
-  const tumbleMin = options.tumbleMin ?? 0.3;
-  const tumbleMax = options.tumbleMax ?? 1.4;
-  const swayMin = options.swayMin ?? 0.15;
-  const swayMax = options.swayMax ?? 0.55;
-  const atlas = options.atlas ?? getPetalAtlas();
+let petalProgramCounter = 0;
+
+function buildPetalShaderPatch(material, opacity) {
+  const uniforms = {
+    uTime: { value: 0 },
+    uFieldHeight: { value: PETAL_FIELD_HEIGHT },
+    uFieldBottom: { value: PETAL_FIELD_BOTTOM },
+    uOpacity: { value: opacity },
+  };
+  material.userData.uniforms = uniforms;
+
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.uTime = uniforms.uTime;
+    shader.uniforms.uFieldHeight = uniforms.uFieldHeight;
+    shader.uniforms.uFieldBottom = uniforms.uFieldBottom;
+    shader.uniforms.uOpacity = uniforms.uOpacity;
+
+    shader.vertexShader = shader.vertexShader
+      .replace(
+        "#include <common>",
+        "#include <common>\n" + PETAL_INSTANCE_ATTRIBUTES_GLSL,
+      )
+      .replace(
+        "#include <beginnormal_vertex>",
+        `
+        vec3 objectNormal = normal;
+        #ifdef USE_TANGENT
+          vec3 objectTangent = vec3( tangent.xyz );
+        #endif
+        float petalAngleN = uTime * aTumbleSpeed + aPhase;
+        mat3 petalRotN = rotMatAxisAngle(normalize(aTumbleAxis), petalAngleN);
+        objectNormal = petalRotN * objectNormal;
+        #ifdef USE_TANGENT
+          objectTangent = petalRotN * objectTangent;
+        #endif
+        vTintColor = aColor;
+        `,
+      )
+      .replace(
+        "#include <begin_vertex>",
+        `
+        float petalAngleV = uTime * aTumbleSpeed + aPhase;
+        mat3 petalRotV = rotMatAxisAngle(normalize(aTumbleAxis), petalAngleV);
+        vec3 transformed = petalRotV * (position * aSize);
+        vec3 petalAnchor = aBasePos;
+        petalAnchor.y -= uTime * aFallSpeed;
+        petalAnchor.y = mod(petalAnchor.y - uFieldBottom, uFieldHeight) + uFieldBottom;
+        petalAnchor.x += sin(uTime * 0.4 + aPhase) * aSwayAmp;
+        petalAnchor.z += cos(uTime * 0.32 + aPhase * 1.3) * aSwayAmp * 0.7;
+        transformed += petalAnchor;
+        `,
+      );
+
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        "#include <common>",
+        `
+        #include <common>
+        varying vec3 vTintColor;
+        uniform float uOpacity;
+        `,
+      )
+      .replace(
+        "#include <color_fragment>",
+        `
+        #include <color_fragment>
+        diffuseColor.rgb *= vTintColor;
+        diffuseColor.a *= uOpacity;
+        `,
+      );
+
+    material.userData.shader = shader;
+  };
+
+  // Force a unique program per material so onBeforeCompile fires for each
+  const cacheKey = `petal-${++petalProgramCounter}`;
+  material.customProgramCacheKey = () => cacheKey;
+}
+
+function addPetalVariant(geometry, sourceMaterial, count, opacity, baseScale, options) {
+  const sizeMin = options.sizeMin;
+  const sizeMax = options.sizeMax;
+  const fallMin = options.fallMin;
+  const fallMax = options.fallMax;
+  const tumbleMin = options.tumbleMin;
+  const tumbleMax = options.tumbleMax;
+  const swayMin = options.swayMin;
+  const swayMax = options.swayMax;
+  const innerR = options.innerRadius;
+  const outerR = options.outerRadius;
 
   const basePos = new Float32Array(count * 3);
   const colors = new Float32Array(count * 3);
@@ -913,21 +1003,14 @@ function addParticleSet(name, count, createPoint, baseScale, opacity, options = 
   const swayAmps = new Float32Array(count);
   const tumbleAxes = new Float32Array(count * 3);
   const tumbleSpeeds = new Float32Array(count);
-  const variants = new Float32Array(count);
 
   const axisVec = new THREE.Vector3();
-
   for (let i = 0; i < count; i += 1) {
-    const point = createPoint(i, count);
-    const color = (
-      point.color ?? petalColors[Math.floor(Math.random() * petalColors.length)]
-    ).clone();
-    color.lerp(new THREE.Color(0xffffff), 0.05 + Math.random() * 0.1);
-
-    basePos[i * 3] = point.x;
-    basePos[i * 3 + 1] = point.y;
-    basePos[i * 3 + 2] = point.z;
-
+    const p = spawnPetalInstance(innerR, outerR);
+    const color = p.color.clone().lerp(new THREE.Color(0xffffff), 0.05 + Math.random() * 0.1);
+    basePos[i * 3] = p.x;
+    basePos[i * 3 + 1] = p.y;
+    basePos[i * 3 + 2] = p.z;
     colors[i * 3] = color.r;
     colors[i * 3 + 1] = color.g;
     colors[i * 3 + 2] = color.b;
@@ -935,13 +1018,8 @@ function addParticleSet(name, count, createPoint, baseScale, opacity, options = 
     sizes[i] = baseScale * THREE.MathUtils.lerp(sizeMin, sizeMax, Math.random());
     fallSpeeds[i] = THREE.MathUtils.lerp(fallMin, fallMax, Math.random());
     swayAmps[i] = THREE.MathUtils.lerp(swayMin, swayMax, Math.random());
-
     axisVec
-      .set(
-        Math.random() * 2 - 1,
-        Math.random() * 2 - 1,
-        Math.random() * 2 - 1,
-      )
+      .set(Math.random() * 2 - 1, Math.random() * 2 - 1, Math.random() * 2 - 1)
       .normalize();
     tumbleAxes[i * 3] = axisVec.x;
     tumbleAxes[i * 3 + 1] = axisVec.y;
@@ -949,95 +1027,78 @@ function addParticleSet(name, count, createPoint, baseScale, opacity, options = 
     tumbleSpeeds[i] =
       (Math.random() < 0.5 ? -1 : 1) *
       THREE.MathUtils.lerp(tumbleMin, tumbleMax, Math.random());
-    variants[i] = Math.floor(Math.random() * PETAL_VARIANT_FILES.length);
   }
 
-  const geometry = new THREE.InstancedBufferGeometry();
-  geometry.index = PETAL_BASE_GEOMETRY.index;
-  geometry.attributes.position = PETAL_BASE_GEOMETRY.attributes.position;
-  geometry.attributes.uv = PETAL_BASE_GEOMETRY.attributes.uv;
-  geometry.instanceCount = count;
-  geometry.setAttribute("aBasePos", new THREE.InstancedBufferAttribute(basePos, 3));
-  geometry.setAttribute("aColor", new THREE.InstancedBufferAttribute(colors, 3));
-  geometry.setAttribute("aPhase", new THREE.InstancedBufferAttribute(phases, 1));
-  geometry.setAttribute("aSize", new THREE.InstancedBufferAttribute(sizes, 1));
-  geometry.setAttribute("aFallSpeed", new THREE.InstancedBufferAttribute(fallSpeeds, 1));
-  geometry.setAttribute("aSwayAmp", new THREE.InstancedBufferAttribute(swayAmps, 1));
-  geometry.setAttribute("aTumbleAxis", new THREE.InstancedBufferAttribute(tumbleAxes, 3));
-  geometry.setAttribute("aTumbleSpeed", new THREE.InstancedBufferAttribute(tumbleSpeeds, 1));
-  geometry.setAttribute("aVariant", new THREE.InstancedBufferAttribute(variants, 1));
+  const instGeom = new THREE.InstancedBufferGeometry();
+  instGeom.index = geometry.index;
+  instGeom.attributes.position = geometry.attributes.position;
+  if (geometry.attributes.normal) instGeom.attributes.normal = geometry.attributes.normal;
+  if (geometry.attributes.uv) instGeom.attributes.uv = geometry.attributes.uv;
+  instGeom.instanceCount = count;
+  instGeom.setAttribute("aBasePos", new THREE.InstancedBufferAttribute(basePos, 3));
+  instGeom.setAttribute("aColor", new THREE.InstancedBufferAttribute(colors, 3));
+  instGeom.setAttribute("aPhase", new THREE.InstancedBufferAttribute(phases, 1));
+  instGeom.setAttribute("aSize", new THREE.InstancedBufferAttribute(sizes, 1));
+  instGeom.setAttribute("aFallSpeed", new THREE.InstancedBufferAttribute(fallSpeeds, 1));
+  instGeom.setAttribute("aSwayAmp", new THREE.InstancedBufferAttribute(swayAmps, 1));
+  instGeom.setAttribute("aTumbleAxis", new THREE.InstancedBufferAttribute(tumbleAxes, 3));
+  instGeom.setAttribute("aTumbleSpeed", new THREE.InstancedBufferAttribute(tumbleSpeeds, 1));
 
-  const material = new THREE.ShaderMaterial({
-    vertexShader: PARTICLE_VERT,
-    fragmentShader: PARTICLE_FRAG,
-    uniforms: {
-      uTime: { value: 0 },
-      uOpacity: { value: opacity },
-      uFieldHeight: { value: PETAL_FIELD_HEIGHT },
-      uFieldBottom: { value: PETAL_FIELD_BOTTOM },
-      uPetal: { value: atlas.texture },
-      uVariantCount: { value: atlas.variantCount },
-    },
-    transparent: true,
-    blending: THREE.NormalBlending,
-    depthTest: true,
-    depthWrite: false,
-    side: THREE.DoubleSide,
-  });
+  // Reuse the source material from the .glb so we keep its baked diffuse map
+  // / alpha / normal map. Fall back to a fresh MeshStandardMaterial only if
+  // the .glb didn't ship one we can patch.
+  const baseMaterial =
+    sourceMaterial && sourceMaterial.isMeshStandardMaterial
+      ? sourceMaterial.clone()
+      : new THREE.MeshStandardMaterial({
+          color: 0xffffff,
+          roughness: 0.78,
+          metalness: 0.0,
+        });
+  baseMaterial.side = THREE.DoubleSide;
+  baseMaterial.transparent = true;
+  baseMaterial.depthWrite = false;
+  if (baseMaterial.alphaTest === 0) baseMaterial.alphaTest = 0.01;
+  if (!baseMaterial.emissive || baseMaterial.emissive.getHex() === 0x000000) {
+    baseMaterial.emissive = new THREE.Color(0x4a1530);
+    baseMaterial.emissiveIntensity = 0.35;
+  }
+  const material = baseMaterial;
+  buildPetalShaderPatch(material, opacity);
   particleMaterials.push(material);
 
-  atlas.onReady = (variantCount) => {
-    material.uniforms.uVariantCount.value = variantCount;
-  };
-
-  const mesh = new THREE.Mesh(geometry, material);
-  mesh.name = name;
+  const mesh = new THREE.Mesh(instGeom, material);
+  mesh.name = "petals-variant";
   mesh.frustumCulled = false;
   particleRoot.add(mesh);
   return mesh;
 }
 
-function buildParticles() {
-  const atlas = getPetalAtlas();
-  const count = window.innerWidth < 700 ? 110 : 200;
-  const innerExclusionRadius = 2.5;
-  const outerRadius = 15;
+async function buildParticles() {
+  const variants = await loadPetalGltfs();
+  if (variants.length === 0) {
+    console.warn("No petal .glb variants loaded; skipping background petals.");
+    return;
+  }
 
-  addParticleSet(
-    "petals",
-    count,
-    () => {
-      const angle = Math.random() * Math.PI * 2;
-      const rNorm = Math.sqrt(Math.random());
-      const radius = THREE.MathUtils.lerp(innerExclusionRadius, outerRadius, rNorm);
-      const x = Math.cos(angle) * radius;
-      const z = Math.sin(angle) * radius;
-      const y = THREE.MathUtils.lerp(
-        PETAL_FIELD_BOTTOM,
-        PETAL_FIELD_TOP,
-        Math.random(),
-      );
-      return {
-        x,
-        y,
-        z,
-        color: petalColors[Math.floor(Math.random() * petalColors.length)],
-      };
-    },
-    0.45,
-    0.68,
-    {
-      atlas,
-      sizeMin: 0.5,
-      sizeMax: 1.8,
-      fallMin: 0.35,
-      fallMax: 0.9,
-      tumbleMin: 0.3,
-      tumbleMax: 1.4,
-      swayMin: 0.15,
-      swayMax: 0.55,
-    },
-  );
+  const totalCount = window.innerWidth < 700 ? 110 : 200;
+  const perVariant = Math.ceil(totalCount / variants.length);
+  const tuning = {
+    sizeMin: 0.5,
+    sizeMax: 1.8,
+    fallMin: 0.35,
+    fallMax: 0.9,
+    tumbleMin: 0.3,
+    tumbleMax: 1.4,
+    swayMin: 0.15,
+    swayMax: 0.55,
+    innerRadius: 2.5,
+    outerRadius: 15,
+  };
+
+  variants.forEach(({ geometry, sourceMaterial }) => {
+    addPetalVariant(geometry, sourceMaterial, perVariant, 0.85, 0.55, tuning);
+  });
 }
 
 function buildDots() {
@@ -1232,10 +1293,11 @@ function animate(timestamp = 0) {
   updateDetailView(detailNow);
 
   particleMaterials.forEach((mat) => {
-    mat.uniforms.uTime.value = motionTime;
-    if (mat.userData == null) mat.userData = {};
-    if (mat.userData.baseOpacity === undefined) mat.userData.baseOpacity = mat.uniforms.uOpacity.value;
-    mat.uniforms.uOpacity.value = mat.userData.baseOpacity * (1 - detailFadeAmount);
+    const u = mat.userData.uniforms;
+    if (!u) return;
+    u.uTime.value = motionTime;
+    if (mat.userData.baseOpacity === undefined) mat.userData.baseOpacity = u.uOpacity.value;
+    u.uOpacity.value = mat.userData.baseOpacity * (1 - detailFadeAmount);
   });
 
   if (detailState === "closed") {

@@ -49,6 +49,7 @@ const scrollHint = document.querySelector("#scroll-hint");
 const skinListEl = document.querySelector("#skin-list");
 const themeForm = document.querySelector("#theme-panel");
 const themeSelect = document.querySelector("#theme-select");
+const cardDetailEl = document.querySelector("#card-detail");
 const THEME_STORAGE_KEY = "helix-theme";
 const VALID_THEMES = new Set(["helix", "spirit", "arcade", "coven", "elderwood", "kda"]);
 
@@ -1726,6 +1727,10 @@ function onDetailKey(event) {
   }
 }
 
+function onDetailBackdropClick(event) {
+  if (event.target === cardDetailEl) closeDetailView();
+}
+
 function updateDetailView(now) {
   if (detailState === "closed") return;
 
@@ -1848,6 +1853,7 @@ function openDetailView(idx) {
   window.addEventListener("touchmove", onDetailScrollAttempt, { passive: true });
   window.addEventListener("keydown", onDetailKey);
   document.getElementById("cd-close")?.addEventListener("click", closeDetailView);
+  cardDetailEl?.addEventListener("click", onDetailBackdropClick);
 }
 
 function closeDetailView() {
@@ -1857,6 +1863,7 @@ function closeDetailView() {
   window.removeEventListener("touchmove", onDetailScrollAttempt);
   window.removeEventListener("keydown", onDetailKey);
   document.getElementById("cd-close")?.removeEventListener("click", closeDetailView);
+  cardDetailEl?.removeEventListener("click", onDetailBackdropClick);
   ++activeTypingToken;
 
   setUnderwater(false);

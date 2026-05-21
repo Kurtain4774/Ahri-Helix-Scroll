@@ -804,10 +804,16 @@ h1 {
   opacity: 0;
   pointer-events: none;
   padding: 20px;
+  background: rgba(0, 0, 0, 0.48);
 }
 
 .card-detail.is-open {
   pointer-events: auto;
+  cursor: pointer;
+}
+
+.card-detail-inner {
+  cursor: auto;
 }
 
 /* Fade other UI panels out during detail view */
@@ -815,7 +821,8 @@ h1 {
 .card-dots,
 .scene-caption,
 .music-panel,
-.scroll-hint {
+.scroll-hint,
+.theme-panel {
   transition: opacity 350ms ease;
 }
 
@@ -823,7 +830,8 @@ body[data-detail-open] .seek-panel,
 body[data-detail-open] .card-dots,
 body[data-detail-open] .scene-caption,
 body[data-detail-open] .music-panel,
-body[data-detail-open] .scroll-hint {
+body[data-detail-open] .scroll-hint,
+body[data-detail-open] .theme-panel {
   opacity: 0;
   pointer-events: none;
 }

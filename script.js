@@ -69,13 +69,57 @@ function applyThemeSelection(event) {
   if (!themeSelect) return;
 
   const nextTheme = VALID_THEMES.has(themeSelect.value) ? themeSelect.value : "spirit";
+  applyLiveTheme(nextTheme);
+}
+
+function applyLiveTheme(nextTheme) {
   try {
     localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
   } catch {
     // Theme persistence is optional.
   }
   document.documentElement.dataset.theme = nextTheme;
-  window.location.reload();
+  updateThemeColors();
+
+  // Fog
+  scene.fog.color.set(themeColors.paper);
+
+  // Environment map
+  buildEnvMap();
+
+  // Lights
+  fillLight.color.set(themeColors.violet);
+  innerGlow.color.set(themeColors.rose);
+  ambientLight.color.set(themeColors.violet);
+  if (hoverGlowLight) hoverGlowLight.color.set(themeColors.rose);
+
+  // Spine materials
+  if (spineMaterials.rim) spineMaterials.rim.color.set(themeColors.violet);
+  if (spineMaterials.railA) spineMaterials.railA.color.set(themeColors.rose);
+  if (spineMaterials.railB) spineMaterials.railB.color.set(themeColors.violet);
+  if (spineMaterials.colInner) spineMaterials.colInner.color.set(themeColors.rose);
+  if (spineMaterials.colOuter) spineMaterials.colOuter.color.set(themeColors.violet);
+
+  // Glow texture (card hover border) — reset singleton so it's redrawn with new rose color
+  if (sharedGlowTexture) {
+    sharedGlowTexture.dispose();
+    sharedGlowTexture = null;
+  }
+  const newGlowTex = getGlowTexture();
+  cardMeshes.forEach((mesh) => {
+    if (mesh.userData.glowMesh) {
+      mesh.userData.glowMesh.material.map = newGlowTex;
+      mesh.userData.glowMesh.material.needsUpdate = true;
+    }
+  });
+
+  // Petal emissive
+  particleMaterials.forEach((mat) => {
+    mat.emissive.set(new THREE.Color(themeColors.rose).multiplyScalar(0.28));
+  });
+
+  // Redraw all card textures with new theme colors
+  cardMeshes.forEach((mesh) => mesh.userData.redraw?.());
 }
 
 function readThemeColors() {
@@ -90,6 +134,12 @@ function readThemeColors() {
 }
 
 const themeColors = readThemeColors();
+
+function updateThemeColors() {
+  Object.assign(themeColors, readThemeColors());
+}
+
+const spineMaterials = {};
 
 function withAlpha(cssHex, alpha) {
   const c = new THREE.Color(cssHex);
@@ -120,7 +170,7 @@ renderer.toneMappingExposure = 1.18;
 const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 80);
 camera.position.set(0.35, 0.15, 10.5);
 
-{
+function buildEnvMap() {
   const envCanvas = document.createElement("canvas");
   envCanvas.width = 256;
   envCanvas.height = 128;
@@ -138,10 +188,13 @@ camera.position.set(0.35, 0.15, 10.5);
   envTexture.colorSpace = THREE.SRGBColorSpace;
   const pmrem = new THREE.PMREMGenerator(renderer);
   pmrem.compileEquirectangularShader();
+  const oldEnv = scene.environment;
   scene.environment = pmrem.fromEquirectangular(envTexture).texture;
+  if (oldEnv) oldEnv.dispose();
   envTexture.dispose();
   pmrem.dispose();
 }
+buildEnvMap();
 
 const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
@@ -335,7 +388,8 @@ const innerGlow = new THREE.PointLight(new THREE.Color(themeColors.rose), 0.5, 8
 innerGlow.position.set(0, 0, 0);
 scene.add(innerGlow);
 
-scene.add(new THREE.AmbientLight(new THREE.Color(themeColors.violet), 0.14));
+const ambientLight = new THREE.AmbientLight(new THREE.Color(themeColors.violet), 0.14);
+scene.add(ambientLight);
 
 function makePanelTexture(fileName, index, options = {}) {
   const width = options.width ?? 1024;
@@ -350,20 +404,29 @@ function makePanelTexture(fileName, index, options = {}) {
 
   drawPanel(ctx, width, height, null, index, options);
 
+  let loadedImage = null;
   let bakedCanvas = null;
+
+  const redraw = () => {
+    drawPanel(ctx, width, height, loadedImage, index, { ...options, fileName });
+    texture.needsUpdate = true;
+    if (loadedImage) {
+      const baked = document.createElement("canvas");
+      baked.width = width;
+      baked.height = height;
+      baked.getContext("2d").drawImage(drawing, 0, 0);
+      bakedCanvas = baked;
+    }
+  };
+
   const image = new Image();
   image.onload = () => {
-    drawPanel(ctx, width, height, image, index, { ...options, fileName });
-    texture.needsUpdate = true;
-    const baked = document.createElement("canvas");
-    baked.width = width;
-    baked.height = height;
-    baked.getContext("2d").drawImage(drawing, 0, 0);
-    bakedCanvas = baked;
+    loadedImage = image;
+    redraw();
   };
   image.src = `./assets/${encodeURIComponent(fileName)}`;
 
-  return { texture, drawing, ctx, getBakedCanvas: () => bakedCanvas };
+  return { texture, drawing, ctx, getBakedCanvas: () => bakedCanvas, redraw };
 }
 
 function drawPanel(ctx, width, height, image, index, options) {
@@ -442,11 +505,8 @@ function drawPanel(ctx, width, height, image, index, options) {
   ctx.restore();
 
   ctx.save();
-  const isEven = index % 2 === 0;
   roundedPath(ctx, inset, inset, panelWidth, panelHeight, radius);
-  ctx.strokeStyle = isEven
-    ? withAlpha(themeColors.rose, 0.68)
-    : withAlpha(themeColors.violet, 0.62);
+  ctx.strokeStyle = withAlpha(themeColors.rose, 0.68);
   ctx.lineWidth = 6;
   ctx.stroke();
 
@@ -697,7 +757,7 @@ async function loadPetalGltfs() {
 }
 
 function makeGlassPanel(fileName, index, config) {
-  const { texture, drawing, ctx, getBakedCanvas } = makePanelTexture(fileName, index, {
+  const { texture, drawing, ctx, getBakedCanvas, redraw } = makePanelTexture(fileName, index, {
     featured: config.featured,
     width: config.featured ? 1000 : 760,
     height: config.featured ? 590 : 450,
@@ -727,6 +787,7 @@ function makeGlassPanel(fileName, index, config) {
     drawingCanvas: drawing,
     drawingCtx: ctx,
     getBakedCanvas,
+    redraw,
   };
 
   const glowMesh = new THREE.Mesh(
@@ -793,6 +854,7 @@ function buildSpine() {
     opacity: 0.22,
     depthWrite: false,
   });
+  spineMaterials.rim = rimMaterial;
 
   const vertebraGeometry = new THREE.TorusKnotGeometry(0.38, 0.16, 48, 6, 2, 3);
   const haloSourceGeometry = new THREE.TorusGeometry(0.62, 0.014, 8, 80);
@@ -843,60 +905,45 @@ function buildSpine() {
   const tubeGeomA = new THREE.TubeGeometry(curveA, 200, 0.022, 6, false);
   const tubeGeomB = new THREE.TubeGeometry(curveB, 200, 0.022, 6, false);
 
-  spineRoot.add(
-    new THREE.Mesh(
-      tubeGeomA,
-      new THREE.MeshBasicMaterial({
-        color: new THREE.Color(themeColors.rose),
-        transparent: true,
-        opacity: 0.54,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-      }),
-    ),
-  );
-  spineRoot.add(
-    new THREE.Mesh(
-      tubeGeomB,
-      new THREE.MeshBasicMaterial({
-        color: new THREE.Color(themeColors.violet),
-        transparent: true,
-        opacity: 0.44,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-      }),
-    ),
-  );
+  spineMaterials.railA = new THREE.MeshBasicMaterial({
+    color: new THREE.Color(themeColors.rose),
+    transparent: true,
+    opacity: 0.54,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+  spineRoot.add(new THREE.Mesh(tubeGeomA, spineMaterials.railA));
+
+  spineMaterials.railB = new THREE.MeshBasicMaterial({
+    color: new THREE.Color(themeColors.violet),
+    transparent: true,
+    opacity: 0.44,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+  spineRoot.add(new THREE.Mesh(tubeGeomB, spineMaterials.railB));
 
   const colGeom = new THREE.CylinderGeometry(0.035, 0.035, HELIX_HEIGHT, 8, 1, true);
-  spineRoot.add(
-    new THREE.Mesh(
-      colGeom,
-      new THREE.MeshBasicMaterial({
-        color: new THREE.Color(themeColors.rose),
-        transparent: true,
-        opacity: 0.16,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-        side: THREE.DoubleSide,
-      }),
-    ),
-  );
+  spineMaterials.colInner = new THREE.MeshBasicMaterial({
+    color: new THREE.Color(themeColors.rose),
+    transparent: true,
+    opacity: 0.16,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+  spineRoot.add(new THREE.Mesh(colGeom, spineMaterials.colInner));
 
   const outerColGeom = new THREE.CylinderGeometry(0.14, 0.14, HELIX_HEIGHT, 8, 1, true);
-  spineRoot.add(
-    new THREE.Mesh(
-      outerColGeom,
-      new THREE.MeshBasicMaterial({
-        color: new THREE.Color(themeColors.violet),
-        transparent: true,
-        opacity: 0.07,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-        side: THREE.DoubleSide,
-      }),
-    ),
-  );
+  spineMaterials.colOuter = new THREE.MeshBasicMaterial({
+    color: new THREE.Color(themeColors.violet),
+    transparent: true,
+    opacity: 0.07,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+  spineRoot.add(new THREE.Mesh(outerColGeom, spineMaterials.colOuter));
 
   hoverGlowLight = new THREE.PointLight(new THREE.Color(themeColors.rose), 0, 5);
   hoverGlowLight.position.set(0, 0, -0.8);

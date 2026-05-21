@@ -190,31 +190,15 @@ select {
   width: min(304px, calc(100vw - 36px));
   min-height: 76px;
   padding: 0.72rem;
-  border: 1px solid color-mix(in srgb, var(--rose) 34%, transparent);
+  border: 1px solid color-mix(in srgb, var(--violet) 38%, transparent);
   border-radius: 8px;
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--violet) 12%, transparent), transparent 46%),
-    var(--theme-panel-bg);
+  background: color-mix(in srgb, var(--paper) 70%, transparent);
   box-shadow:
-    0 0 22px color-mix(in srgb, var(--rose) 10%, transparent),
-    inset 0 0 22px color-mix(in srgb, var(--violet) 8%, transparent);
+    0 0 24px color-mix(in srgb, var(--violet) 12%, transparent),
+    inset 0 0 20px color-mix(in srgb, var(--violet) 6%, transparent);
   backdrop-filter: blur(16px);
   text-transform: uppercase;
   user-select: none;
-  transition: background 0.22s, border-color 0.22s, box-shadow 0.22s, transform 0.22s;
-}
-
-.theme-panel:hover,
-.theme-panel:focus-within {
-  border-color: color-mix(in srgb, var(--gold) 58%, transparent);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--gold) 10%, transparent), transparent 48%),
-    var(--theme-panel-bg-strong);
-  box-shadow:
-    0 0 30px color-mix(in srgb, var(--gold) 14%, transparent),
-    0 0 44px color-mix(in srgb, var(--rose) 8%, transparent),
-    inset 0 0 24px color-mix(in srgb, var(--rose) 10%, transparent);
-  transform: translateY(-1px);
 }
 
 .theme-label {
@@ -229,13 +213,12 @@ select {
 .theme-select,
 .theme-apply {
   min-height: 34px;
-  border: 1px solid color-mix(in srgb, var(--rose) 42%, transparent);
+  border: 1px solid color-mix(in srgb, var(--violet) 38%, transparent);
   border-radius: 999px;
   color: rgba(255, 255, 255, 0.96);
   background: rgba(255, 255, 255, 0.055);
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  transition: background 0.2s, border-color 0.2s, box-shadow 0.2s, color 0.2s;
 }
 
 .theme-select {
@@ -262,11 +245,8 @@ select {
   color: var(--paper);
 }
 
-.theme-select:hover,
 .theme-select:focus-visible {
-  border-color: color-mix(in srgb, var(--gold) 62%, transparent);
-  background-color: color-mix(in srgb, var(--gold) 8%, rgba(255, 255, 255, 0.055));
-  box-shadow: inset 0 0 14px color-mix(in srgb, var(--gold) 8%, transparent);
+  border-color: color-mix(in srgb, var(--violet) 70%, transparent);
 }
 
 .theme-apply {
@@ -274,26 +254,12 @@ select {
   padding: 0 0.78rem;
   cursor: pointer;
   color: var(--gold);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--gold) 10%, transparent), transparent),
-    color-mix(in srgb, var(--rose) 8%, color-mix(in srgb, var(--paper) 20%, transparent));
-  box-shadow: inset 0 0 12px color-mix(in srgb, var(--gold) 8%, transparent);
-}
-
-.theme-apply:hover {
-  border-color: color-mix(in srgb, var(--gold) 72%, transparent);
-  color: rgba(255, 255, 255, 0.98);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--gold) 18%, transparent), transparent),
-    color-mix(in srgb, var(--rose) 18%, color-mix(in srgb, var(--paper) 22%, transparent));
-  box-shadow:
-    inset 0 0 14px color-mix(in srgb, var(--gold) 12%, transparent),
-    0 0 14px color-mix(in srgb, var(--gold) 16%, transparent);
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .theme-select:focus-visible,
 .theme-apply:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--gold) 72%, transparent);
+  outline: 2px solid color-mix(in srgb, var(--violet) 70%, transparent);
   outline-offset: 2px;
 }
 
@@ -305,27 +271,17 @@ select {
   z-index: 6;
   width: min(230px, calc(100vw - 44px));
   padding: 1rem 1.1rem;
-  border: 1px solid color-mix(in srgb, var(--rose) 24%, transparent);
+  border: 1px solid color-mix(in srgb, var(--violet) 38%, transparent);
   border-radius: 8px;
-  background: color-mix(in srgb, var(--paper) 42%, transparent);
+  background: color-mix(in srgb, var(--paper) 70%, transparent);
   box-shadow:
-    0 0 28px color-mix(in srgb, var(--rose) 8%, transparent),
-    inset 0 0 22px color-mix(in srgb, var(--violet) 5%, transparent);
+    0 0 24px color-mix(in srgb, var(--violet) 12%, transparent),
+    inset 0 0 20px color-mix(in srgb, var(--violet) 6%, transparent);
   backdrop-filter: blur(12px);
   color: var(--dim);
   text-transform: uppercase;
   user-select: none;
   transform: translateY(-50%);
-  transition: background 0.22s, border-color 0.22s, box-shadow 0.22s;
-}
-
-.seek-panel:hover,
-.seek-panel:focus-within {
-  border-color: color-mix(in srgb, var(--gold) 42%, transparent);
-  background: color-mix(in srgb, var(--paper) 78%, transparent);
-  box-shadow:
-    0 0 34px color-mix(in srgb, var(--gold) 10%, transparent),
-    inset 0 0 26px color-mix(in srgb, var(--rose) 8%, transparent);
 }
 
 .seek-title {
@@ -349,12 +305,12 @@ select {
   align-items: flex-start;
   min-height: 27px;
   max-width: 100%;
-  color: color-mix(in srgb, var(--rose) 88%, #fff);
+  color: var(--violet);
   font-size: 0.74rem;
   line-height: 1.28;
   text-decoration: none;
   letter-spacing: 0.06em;
-  text-shadow: 0 0 14px color-mix(in srgb, var(--rose) 32%, transparent);
+  text-shadow: 0 0 14px color-mix(in srgb, var(--violet) 32%, transparent);
   white-space: normal;
   overflow: hidden;
   overflow-wrap: anywhere;
@@ -363,30 +319,30 @@ select {
 }
 
 .seek-list a:hover {
-  color: var(--gold);
+  color: #ffffff;
   opacity: 1;
-  text-shadow: 0 0 14px color-mix(in srgb, var(--gold) 40%, transparent);
+  text-shadow: 0 0 14px rgba(255, 255, 255, 0.40);
 }
 
 .seek-list a::before {
   flex: 0 0 auto;
-  color: rgba(255, 255, 255, 0.72);
+  color: var(--violet);
   content: "-";
   margin-right: 0.55rem;
   line-height: 1.28;
 }
 
 .seek-list a.active {
-  color: var(--gold);
+  color: #ffffff;
   opacity: 1;
   text-shadow:
-    0 0 12px color-mix(in srgb, var(--gold) 50%, transparent),
+    0 0 12px rgba(255, 255, 255, 0.50),
     0 0 22px color-mix(in srgb, var(--rose) 28%, transparent);
   transform: translateX(6px);
 }
 
 .seek-list a.active::before {
-  color: var(--gold);
+  color: #ffffff;
 }
 
 /* --- Music panel --- */
@@ -483,19 +439,17 @@ select {
   flex: 0 0 auto;
   min-width: 58px;
   min-height: 36px;
-  border: 1px solid color-mix(in srgb, var(--rose) 52%, transparent);
+  border: 1px solid color-mix(in srgb, var(--violet) 38%, transparent);
   border-radius: 999px;
-  background: color-mix(in srgb, var(--rose) 8%, color-mix(in srgb, var(--paper) 36%, transparent));
+  background: rgba(255, 255, 255, 0.04);
   color: rgba(255, 255, 255, 0.98);
   cursor: pointer;
   font-size: 0.82rem;
-  box-shadow: inset 0 0 14px color-mix(in srgb, var(--rose) 12%, transparent);
-  transition: border-color 0.2s, box-shadow 0.2s;
+  transition: transform 0.2s ease;
 }
 
 .music-toggle:hover {
-  border-color: color-mix(in srgb, var(--gold) 70%, transparent);
-  box-shadow: inset 0 0 14px color-mix(in srgb, var(--gold) 10%, transparent), 0 0 12px color-mix(in srgb, var(--gold) 18%, transparent);
+  transform: scale(1.13);
 }
 
 .music-toggle:focus-visible {
@@ -569,16 +523,16 @@ select {
 }
 
 .music-panel.needs-interaction {
-  border-color: color-mix(in srgb, var(--rose) 52%, transparent);
+  border-color: color-mix(in srgb, var(--violet) 38%, transparent);
   animation: panel-pulse 2s ease-in-out infinite;
 }
 
 @keyframes panel-pulse {
   0%, 100% {
-    box-shadow: 0 0 24px color-mix(in srgb, var(--rose) 12%, transparent), inset 0 0 20px color-mix(in srgb, var(--rose) 6%, transparent);
+    box-shadow: 0 0 24px color-mix(in srgb, var(--violet) 12%, transparent), inset 0 0 20px color-mix(in srgb, var(--violet) 6%, transparent);
   }
   50% {
-    box-shadow: 0 0 36px color-mix(in srgb, var(--rose) 38%, transparent), inset 0 0 24px color-mix(in srgb, var(--rose) 10%, transparent);
+    box-shadow: 0 0 36px color-mix(in srgb, var(--violet) 38%, transparent), inset 0 0 24px color-mix(in srgb, var(--violet) 10%, transparent);
   }
 }
 

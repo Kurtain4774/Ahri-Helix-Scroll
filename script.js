@@ -478,8 +478,8 @@ function drawCardTitle(ctx, width, height, index, fileName = "") {
   ctx.textBaseline = "middle";
 
   ctx.font = `500 ${mainSize}px Consolas, 'Liberation Mono', monospace`;
-  ctx.shadowColor = themeColors.rose;
-  ctx.shadowBlur = 16;
+  ctx.shadowColor = "transparent";
+  ctx.shadowBlur = 0;
   ctx.strokeStyle = withAlpha(themeColors.paper, 0.98);
   ctx.lineWidth = 6;
   ctx.fillStyle = "rgba(255, 255, 255, 1)";
@@ -491,9 +491,9 @@ function drawCardTitle(ctx, width, height, index, fileName = "") {
   });
 
   ctx.font = "500 24px Consolas, 'Liberation Mono', monospace";
-  ctx.shadowColor = themeColors.violet;
-  ctx.shadowBlur = 12;
-  ctx.fillStyle = themeColors.violet;
+  ctx.shadowColor = "transparent";
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = "rgba(255, 255, 255, 1)";
   ctx.fillText("AHRI", width / 2, blockTop - 18);
 
   const indexLabel =
@@ -629,8 +629,8 @@ function getGlowTexture() {
   ctx.lineWidth = 3;
   for (let i = 0; i < 4; i++) {
     ctx.shadowColor = themeColors.rose;
-    ctx.shadowBlur = 8 + i * 14;
-    roundedPath(ctx, 18, 18, w - 36, h - 36, 36);
+    ctx.shadowBlur = 3 + i * 4;
+    roundedPath(ctx, 13, 13, w - 26, h - 26, 30);
     ctx.stroke();
   }
   sharedGlowTexture = new THREE.CanvasTexture(c);
@@ -1536,7 +1536,7 @@ function updateMusicButton(isPlaying) {
     `${isPlaying ? "Pause" : "Play"} Legends Never Die`,
   );
   if (musicKicker) {
-    musicKicker.textContent = isPlaying ? "Now playing" : "Tap to play";
+    musicKicker.textContent = isPlaying ? "Now playing" : "Soundtrack";
   }
   musicPanel?.classList.toggle("is-playing", isPlaying);
 }
@@ -1547,7 +1547,7 @@ function setMusicVolume(value) {
     ? THREE.MathUtils.clamp(numericValue, 0, 1)
     : DEFAULT_MUSIC_VOLUME;
   if (musicAudio) {
-    musicAudio.volume = musicVolumeLevel;
+    musicAudio.volume = musicVolumeLevel * 0.5;
   }
   if (musicVolume) {
     musicVolume.value = String(musicVolumeLevel);
@@ -1560,7 +1560,7 @@ function startMusic() {
 
   musicRequested = true;
   musicPanel?.classList.remove("needs-interaction");
-  musicAudio.volume = musicVolumeLevel;
+  musicAudio.volume = musicVolumeLevel * 0.5;
   const playAttempt = musicAudio.play();
 
   if (playAttempt) {
